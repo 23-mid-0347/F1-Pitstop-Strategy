@@ -77,7 +77,8 @@ def upsert_driver(conn, code: str, full_name: str, nationality: str) -> int:
     result = conn.execute(
         text("""
             INSERT INTO drivers (driver_code, full_name, nationality) VALUES (:code, :full_name, :nationality)
-            ON CONFLICT (driver_code) DO UPDATE SET full_name = EXCLUDED.full_name
+            ON CONFLICT (driver_code) DO UPDATE SET
+                full_name = EXCLUDED.full_name, nationality = EXCLUDED.nationality
             RETURNING driver_id
         """),
         {"code": code, "full_name": full_name, "nationality": nationality},

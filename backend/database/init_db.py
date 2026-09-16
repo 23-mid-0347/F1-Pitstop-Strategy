@@ -1,23 +1,22 @@
 """
-Creates all tables from the ORM models in models.py.
-Alternative to running schema.sql by hand with psql — use this one
-once you're wiring things into FastAPI.
+Creates all tables by executing schema.sql directly against the database.
 
 Usage:
     python database/init_db.py
 """
-import sys
 import os
-
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from sqlalchemy import text
 
 from database.connection import get_engine
-from database.models import Base
 
 
 def main():
     engine = get_engine()
-    Base.metadata.create_all(engine)
+    schema_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "schema.sql")
+    with open(schema_path) as f:
+        ddl = f.read()
+    with engine.begin() as conn:
+        conn.execute(text(ddl))
     print("All tables created (or already existed).")
 
 
