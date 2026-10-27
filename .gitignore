@@ -1,9 +1,28 @@
+# Local environment and secrets
 .env
+.env.*
+!.env.example
+
+# Python
 __pycache__/
-*.pyc
+*.py[cod]
 .venv/
 venv/
-node_modules/
 *.egg-info/
-.DS_Store
+
+# FastF1 cache (actual path is backend/cache)
+backend/cache/
 fastf1_cache/
+
+# Tests / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Frontend / build artifacts
+node_modules/
+dist/
+build/
+
+# OS/editor
+.DS_Store
