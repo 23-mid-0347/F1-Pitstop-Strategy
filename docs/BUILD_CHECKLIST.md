@@ -71,7 +71,7 @@ Keep the degradation model, simulator, and optimizer as separate modules with ex
 **Current progress:** repository files and test commands are committed. The Python tests and live PostgreSQL/schema initialization have not been executed in this remote review environment; run the verification commands in the README before closing this milestone.
 
 ### Milestone 1 — Database and one-season ingestion
-- [ ] Correct the init script usage comment.
+- [x] Correct the init script usage comment and standardize module invocation.
 - [ ] Implement schedule/event/session ingestion.
 - [ ] Implement lap ingestion, preserving time units and missing values.
 - [ ] Implement stint/compound ingestion with reliable tyre-age derivation.
@@ -158,7 +158,7 @@ Keep the degradation model, simulator, and optimizer as separate modules with ex
 
 ## Immediate next task
 
-Start with **Milestone 0 and the initial ingestion smoke test**, not the model. First fix the cache ignore, standardize how modules are run, then create the first ingestion script(s) and load one season. That gives the project a trustworthy data foundation for every later claim.
+Milestone 0 repository scaffolding is committed. Run the local verification commands in the README before closing the milestone: install dependencies, execute `python -m pytest -q`, check PostgreSQL with `python -m database.check_connection`, and initialize the schema with `python -m database.init_db`. Once those pass, move to **Milestone 1**: implement schedule/event/session ingestion first, then load one season and verify row counts before extending the loader to laps, stints, pit stops, weather and track-status periods.
 
 ## Research notes
 
