@@ -59,14 +59,16 @@ Keep the degradation model, simulator, and optimizer as separate modules with ex
 ## Build checklist
 
 ### Milestone 0 — Repository and environment
-- [ ] Fix `.gitignore` to ignore the actual cache folder `backend/cache/` (and any other chosen cache paths).
-- [ ] Confirm `.env` is ignored and `.env.example` contains placeholders only.
-- [ ] Add the exact dependency manifest and supported Python version.
-- [ ] Ensure package markers and run commands are consistent.
-- [ ] Add a README with setup, database creation, ingestion, tests, and architecture.
-- [ ] Add a smoke test for configuration and database connection.
+- [x] Fix `.gitignore` to ignore the actual cache folder `backend/cache/` (and any other chosen cache paths).
+- [x] Confirm `.env` is ignored and `.env.example` contains placeholders only.
+- [x] Add runtime/dev dependency manifests and document Python 3.14 as the reference version. (Exact pins/lockfile remain a release-hardening task after a clean environment install.)
+- [x] Add package markers and standardize the database initialization command.
+- [x] Add a README with setup, database creation, connection/schema checks, project architecture and milestones.
+- [x] Add config tests and a standalone live PostgreSQL connection check. (Execution on the developer machine remains to be verified.)
 
 **Exit condition:** a clean environment can install dependencies and initialize the schema using documented commands.
+
+**Current progress:** repository files and test commands are committed. The Python tests and live PostgreSQL/schema initialization have not been executed in this remote review environment; run the verification commands in the README before closing this milestone.
 
 ### Milestone 1 — Database and one-season ingestion
 - [ ] Correct the init script usage comment.
