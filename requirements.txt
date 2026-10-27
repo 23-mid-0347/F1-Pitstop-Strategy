@@ -1,0 +1,6 @@
+# Compatible runtime ranges; pin exact versions in a lockfile for releases.
+fastf1>=3.9.0,<4.0.0
+pandas>=2.0.0,<4.0.0
+psycopg[binary]>=3.2.0,<4.0.0
+python-dotenv>=1.0.0,<2.0.0
+SQLAlchemy>=2.0.44,<3.0.0
