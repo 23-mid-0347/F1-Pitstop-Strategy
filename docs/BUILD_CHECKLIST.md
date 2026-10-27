@@ -50,7 +50,11 @@ Keep the degradation model, simulator, and optimizer as separate modules with ex
 12. **Optimizer:** implement and benchmark grid search first. Consider dynamic programming only after defining a valid state, transition, tyre/stop constraints, and stochastic event treatment; compare both solutions on small cases.
 13. **API:** build/test FastAPI endpoints after core Python functions work in ordinary unit tests. Use request/response schemas, validation, typed outputs, and parameterized SQL. Avoid optional SQL parameters with ambiguous PostgreSQL types; cast optional parameters.
 14. **Reproducibility:** record data coverage, source season/session identifiers, cleaning rules, model version, simulation count, random seed, assumptions, and evaluation metrics with each run.
-15. **Scope limits:** version 1 is a single-driver strategy support model, not an official team simulator. Traffic, overtaking, multi-car undercut/overcut games, wet-weather transitions, regulations/mandatory compound constraints, and live ingestion are later scope unless a hard project requirement says otherwise.
+15. **Scope limits:** version 1 is a single-driver strategy support model, not an official team simulator. Traffic, overtaking, multi-car undercut/overcut games, live ingestion, and full wet-weather transitions are later scope unless required.
+16. **Tyre age must be explicit:** add a per-lap tyre-age field (and preferably source stint number/fresh-tyre indicator) to `lap_times` or the clean modelling dataset. Stint start/end laps alone cannot reliably identify the age of a used tyre fitted during a race. Use FastF1's tyre-life field when available and document missing-value handling.
+17. **Pit loss must be calibrated correctly:** `pit_stops.duration_ms` records pit-lane entry-to-exit duration, not the extra time lost versus racing at normal pace. Do not add that raw duration directly to lap-time sums. Estimate circuit/session pit loss as incremental time relative to a green-flag reference, and model the SC/VSC reduction as a separate calibrated assumption.
+18. **Legal strategy constraints:** version 1 should expose mandatory compound/stop rules as explicit configurable constraints, using the relevant season's regulations. Never rank an infeasible strategy as optimal. Wet and red-flag cases should be flagged unsupported until their rules are implemented and tested.
+19. **V1 recommendation scope:** recommend the next pit decision from the current race state and simulate the remainder of the race under documented assumptions. Keep the number of future stops configurable but bounded; don't silently assume a strategy is legal or globally optimal if later stops are outside the search space.
 
 ## Build checklist
 
@@ -156,10 +160,12 @@ Start with **Milestone 0 and the initial ingestion smoke test**, not the model. 
 
 ## Research notes
 
-External examples show that open F1 strategy projects use empirically calibrated tyre models, stochastic neutralisation events, paired Monte Carlo scenarios, and held-out validation. These are useful design precedents, not proof that this project's outputs are already accurate:
-- FastF1 API/source: https://github.com/theOehrly/Fast-F1
-- Open race-strategy modelling example with stochastic safety-car treatment: https://github.com/vidyuthdev/f1-2026-race-strategy
-- Strategy engine describing paired scenarios and explicit simplifications: https://github.com/LoreMonti/f1-strategy-engine
-- Race-strategy Monte Carlo project with evaluation and uncertainty reporting: https://github.com/Hellblazer704/pitwall
+External sources show that F1 pit-stop optimization itself is not a new contribution: a 2024 *European Journal of Operational Research* paper models two-driver strategic interaction with dynamic programming and game theory, and a 2026 *Machine Learning* paper studies reinforcement-learning tactics. Our defensible project contribution should therefore emphasize a clearly scoped open-data implementation, transparent assumptions, reproducible evaluation, and a traceable end-to-end pipeline rather than claiming to invent pit-stop optimization.
 
-Do not copy another project's claims, data or code without reviewing its license and methodology. Our implementation should be independently tested against our own data and stated assumptions.
+- FastF1 data reference: https://github.com/theOehrly/Fast-F1/blob/main/docs/data_reference/index.rst (documents timing/laps and track-status data)
+- Aguad & Thraves (2024), *Optimizing pit stop strategies in Formula 1 with dynamic programming and game theory*: https://doi.org/10.1016/j.ejor.2024.07.011
+- Thomas et al. (2026), *Race Strategy Reinforcement Learning: Optimising Pitstop Strategy with Emergent Tactics in Formula One*: https://doi.org/10.1007/s10994-026-07081-3
+- scikit-learn GroupKFold reference: https://scikit-learn.org/stable/modules/generated/sklearn.model_selection.GroupKFold.html
+- Example of stochastic tyre, safety-car and Monte Carlo modelling: https://github.com/LoreMonti/f1-strategy-engine
+
+These are design references, not evidence that this project's implementation or results are already validated. Do not copy code without reviewing its licence and methodology.
