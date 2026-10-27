@@ -6,8 +6,6 @@ Run from the backend directory:
 """
 import os
 
-from sqlalchemy import text
-
 from database.connection import get_engine
 
 
@@ -21,11 +19,13 @@ def main() -> None:
     # Execute them separately so the script does not depend on multi-statement
     # handling in a particular PostgreSQL driver/protocol mode.
     statements = [statement.strip() for statement in ddl.split(";") if statement.strip()]
-    with engine.begin() as conn:
-        for statement in statements:
-            conn.exec_driver_sql(statement)
+    try:
+        with engine.begin() as conn:
+            for statement in statements:
+                conn.exec_driver_sql(statement)
+    finally:
+        engine.dispose()
 
-    engine.dispose()
     print(f"Database schema initialized ({len(statements)} statements).")
 
 
