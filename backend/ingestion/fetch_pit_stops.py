@@ -109,9 +109,35 @@ def normalize_pit_stops(
     return records, stats
 
 
-def fetch_openf1_pit_stops(session_key: int | str) -> list[dict[str, Any]]:
-    """Fetch pit-lane visit records for one OpenF1 race session."""
-    return _get_openf1_json("pit", {"session_key": session_key})
+def fetch_openf1_pit_stops(
+    session_key: int | str,
+    meeting_key: int | str | None = None,
+) -> list[dict[str, Any]]:
+    """Fetch pit visits by race session, with a meeting-level fallback for 404s.
+
+    Some OpenF1 historical queries can return 404 when a session-specific pit
+    partition has no direct result. When a meeting key is available, retry at
+    meeting scope and then filter strictly back to the intended Race session
+    using each row's session_key. Never ingest practice or sprint pit visits.
+    """
+    try:
+        return _get_openf1_json("pit", {"session_key": session_key})
+    except RuntimeError as exc:
+        if "returned HTTP 404" not in str(exc) or meeting_key is None:
+            raise
+
+    meeting_rows = _get_openf1_json("pit", {"meeting_key": meeting_key})
+    session_rows = [
+        row for row in meeting_rows
+        if str(row.get("session_key")) == str(session_key)
+    ]
+    if not session_rows:
+        raise RuntimeError(
+            "OpenF1 returned HTTP 404 for the session-level /pit query and the "
+            f"meeting-level fallback contained no pit rows for session_key={session_key} "
+            f"(meeting_key={meeting_key})."
+        )
+    return session_rows
 
 
 def fetch_openf1_drivers(session_key: int | str) -> list[dict[str, Any]]:
@@ -179,7 +205,10 @@ def ingest_pit_stops(
                 if session_key is None:
                     raise ValueError("matched OpenF1 session has no session_key")
 
-                pit_rows = fetch_openf1_pit_stops(session_key)
+                pit_rows = fetch_openf1_pit_stops(
+                    session_key,
+                    meeting_key=source_session.get("meeting_key"),
+                )
                 driver_rows = fetch_openf1_drivers(session_key)
                 records, stats = normalize_pit_stops(pit_rows, driver_rows)
                 print(
