@@ -88,6 +88,46 @@ The loader uses database upserts keyed by the current unique constraints, so rep
 
 FastF1's cache is stored under `backend/cache/`; cache files should not be committed.
 
+## Ingest Grand Prix race laps
+
+Run from the repository root after the season schedule has been ingested and the database schema has been initialized.
+
+Start with a dry run of the 2023 Bahrain Grand Prix. It fetches and validates the lap table but does not insert driver or lap rows:
+
+```bash
+python -m backend.ingestion.fetch_race_laps 2023 --round 1 --dry-run
+```
+
+If the dry run succeeds, ingest that round:
+
+```bash
+python -m backend.ingestion.fetch_race_laps 2023 --round 1
+```
+
+Then, after checking the first-round data, run all scheduled 2023 Grand Prix Race sessions:
+
+```bash
+python -m backend.ingestion.fetch_race_laps 2023
+```
+
+The loader requires the Race sessions to exist in the local `events` and `sessions` tables. It retrieves each race with `fastf1.get_session(year, round, "R")` and loads laps and race-control messages without car telemetry or weather. A round is committed in its own transaction, and the unique session/driver/lap key makes re-runs update existing lap records.
+
+The loader preserves lap time in integer milliseconds, the source tyre compound, source stint number, `TyreLife`, `FreshTyre`, pit-in/out indicators, track status, deleted/accuracy flags, FastF1-generated-row indicator, and lap start/end offsets in milliseconds. Missing lap times remain NULL. The initial raw-ingestion stage does not filter out in-laps, out-laps, SC/VSC laps, deleted laps, or inaccurate laps. Rows are skipped only when they have no usable driver code or positive integer lap number, and those exclusions are counted. Explicit cleaning and attrition reporting belong to the next milestone.
+
+FastF1 3.9 supports F1TV authentication, and most historical timing data may require an active F1TV Access/Pro/Premium account. Check authentication status with:
+
+```bash
+python -m fastf1 auth f1tv --status
+```
+
+If authentication is needed, follow FastF1's interactive process:
+
+```bash
+python -m fastf1 auth f1tv --authenticate
+```
+
+Do not paste credentials into chat or commit them to Git. FastF1 stores authentication tokens locally. See the [FastF1 authentication documentation](https://github.com/theOehrly/Fast-F1/blob/main/docs/api_reference/accounts_auth.rst).
+
 ## Repository layout
 
 ```text
