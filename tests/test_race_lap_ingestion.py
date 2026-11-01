@@ -1,10 +1,8 @@
 from contextlib import nullcontext
-from datetime import datetime
-
 import pandas as pd
 import pytest
 
-from backend.ingestion import fetch_race_laps
+from backend.ingestion import fetch_race_laps, utils
 
 
 def _lap_row(
@@ -165,3 +163,19 @@ def test_persist_laps_upserts_driver_and_forwards_tyre_age(monkeypatch):
     assert lap_call["tyre_age"] == 3.0
     assert lap_call["tire_compound"] == "SOFT"
     assert lap_call["is_accurate"] is True
+
+
+def test_fastf1_cache_uses_configure_without_deprecation(monkeypatch, tmp_path):
+    cache_dir = tmp_path / "fastf1-cache"
+    calls = []
+    monkeypatch.setattr(utils, "CACHE_DIR", str(cache_dir))
+    monkeypatch.setattr(
+        utils.fastf1.Cache,
+        "configure",
+        lambda **kwargs: calls.append(kwargs),
+    )
+
+    utils.setup_fastf1_cache()
+
+    assert cache_dir.is_dir()
+    assert calls == [{"cache_dir": str(cache_dir)}]
