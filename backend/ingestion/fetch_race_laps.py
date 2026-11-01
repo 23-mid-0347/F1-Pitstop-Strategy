@@ -277,7 +277,9 @@ def fetch_openf1_race_sessions(year: int) -> list[dict[str, Any]]:
 
     races: list[dict[str, Any]] = []
     for session in sessions:
-        if str(session.get("session_type", "")).strip().lower() != "race":
+        # OpenF1 can mark a Sprint session's session_type as "Race" too.
+        # session_name distinguishes the actual Grand Prix Race from "Sprint".
+        if str(session.get("session_name", "")).strip().lower() != "race":
             continue
         meeting = meetings_by_key.get(str(session.get("meeting_key")), {})
         # Keep the session's own keys and dates, while adding the official
