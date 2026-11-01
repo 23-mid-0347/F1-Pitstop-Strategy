@@ -85,7 +85,7 @@ CREATE TABLE IF NOT EXISTS weather (
     UNIQUE (session_id, recorded_at)
 );
 
--- Central to the pit-stop strategy project; not part of the F1 RAG database.
+-- Central to the pit-stop strategy project, not part of the F1 RAG database.
 CREATE TABLE IF NOT EXISTS safety_car_periods (
     period_id       SERIAL PRIMARY KEY,
     session_id      INT NOT NULL REFERENCES sessions(session_id) ON DELETE CASCADE,
