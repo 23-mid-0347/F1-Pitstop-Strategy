@@ -131,6 +131,27 @@ def _optional_bool(value: Any) -> bool | None:
         return None
 
 
+def _utc_naive_datetime(value: Any):
+    """Parse an absolute source timestamp and store it as UTC-naive datetime.
+
+    OpenF1's laps.date_start is explicitly approximate; the timezone is normalized
+    to UTC so it can be compared with weather and race-control event timestamps.
+    """
+    if _is_missing(value):
+        return None
+    try:
+        timestamp = pd.Timestamp(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    if pd.isna(timestamp):
+        return None
+    if timestamp.tzinfo is None:
+        timestamp = timestamp.tz_localize("UTC")
+    else:
+        timestamp = timestamp.tz_convert("UTC")
+    return timestamp.tz_localize(None).to_pydatetime()
+
+
 def _timedelta_ms(value: Any) -> int | None:
     if _is_missing(value):
         return None
@@ -196,6 +217,19 @@ def normalize_laps(laps: pd.DataFrame) -> tuple[list[dict[str, Any]], dict[str, 
         seen_keys.add(key)
 
         lap_time_ms = _timedelta_ms(row.get("LapTime"))
+        lap_start_at = _utc_naive_datetime(row.get("LapStartAt"))
+        lap_duration_seconds = _optional_float(row.get("LapDurationSeconds"))
+        lap_end_at = None
+        if (
+            lap_start_at is not None
+            and lap_duration_seconds is not None
+            and math.isfinite(lap_duration_seconds)
+            and lap_duration_seconds > 0
+        ):
+            lap_end_at = (
+                pd.Timestamp(lap_start_at)
+                + pd.to_timedelta(lap_duration_seconds, unit="s")
+            ).to_pydatetime()
         if lap_time_ms is None:
             stats["missing_lap_time_rows"] += 1
 
@@ -218,6 +252,8 @@ def normalize_laps(laps: pd.DataFrame) -> tuple[list[dict[str, Any]], dict[str, 
             "fastf1_generated": _optional_bool(row.get("FastF1Generated")),
             "lap_start_time_ms": _timedelta_ms(row.get("LapStartTime")),
             "lap_end_time_ms": _timedelta_ms(row.get("Time")),
+            "lap_start_at": lap_start_at,
+            "lap_end_at": lap_end_at,
         })
 
     stats["normalized_rows"] = len(records)
@@ -398,6 +434,9 @@ def fetch_openf1_race_laps(session_key: int | str) -> pd.DataFrame:
             "Nationality": _clean_text(driver.get("country_code")),
             "LapNumber": lap.get("lap_number"),
             "LapTime": _seconds_to_timedelta(lap.get("lap_duration")),
+            # OpenF1 date_start is approximate, but is an absolute UTC timestamp.
+            "LapStartAt": lap.get("date_start"),
+            "LapDurationSeconds": lap.get("lap_duration"),
             "Compound": compound,
             "Stint": stint_number,
             "TyreLife": tyre_age,
@@ -442,6 +481,8 @@ def _persist_laps(engine, session_id: int, records: list[dict[str, Any]]) -> Non
                 fastf1_generated=record["fastf1_generated"],
                 lap_start_time_ms=record["lap_start_time_ms"],
                 lap_end_time_ms=record["lap_end_time_ms"],
+                lap_start_at=record["lap_start_at"],
+                lap_end_at=record["lap_end_at"],
             )
 
 
