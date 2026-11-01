@@ -22,6 +22,45 @@ def _drivers():
     ]
 
 
+def test_fetch_pit_stops_falls_back_to_meeting_and_filters_session(monkeypatch):
+    calls = []
+
+    def fake_get(endpoint, params):
+        calls.append((endpoint, params))
+        if params == {"session_key": 123}:
+            raise RuntimeError("OpenF1 endpoint /pit returned HTTP 404.")
+        if params == {"meeting_key": 456}:
+            return [
+                {"session_key": 123, "driver_number": 1, "lap_number": 10},
+                {"session_key": 124, "driver_number": 11, "lap_number": 12},
+            ]
+        raise AssertionError(f"Unexpected request parameters: {params}")
+
+    monkeypatch.setattr(fetch_pit_stops, "_get_openf1_json", fake_get)
+
+    rows = fetch_pit_stops.fetch_openf1_pit_stops(123, meeting_key=456)
+
+    assert rows == [
+        {"session_key": 123, "driver_number": 1, "lap_number": 10}
+    ]
+    assert calls == [
+        ("pit", {"session_key": 123}),
+        ("pit", {"meeting_key": 456}),
+    ]
+
+
+def test_fetch_pit_stops_raises_if_meeting_fallback_has_no_matching_session(monkeypatch):
+    def fake_get(endpoint, params):
+        if params == {"session_key": 123}:
+            raise RuntimeError("OpenF1 endpoint /pit returned HTTP 404.")
+        return [{"session_key": 124, "driver_number": 11, "lap_number": 12}]
+
+    monkeypatch.setattr(fetch_pit_stops, "_get_openf1_json", fake_get)
+
+    with pytest.raises(RuntimeError, match="fallback contained no pit rows"):
+        fetch_pit_stops.fetch_openf1_pit_stops(123, meeting_key=456)
+
+
 def test_normalize_pit_stops_sorts_and_numbers_stops_per_driver():
     pit_rows = [
         {
@@ -125,7 +164,7 @@ def test_dry_run_does_not_write_rows(monkeypatch):
     monkeypatch.setattr(
         fetch_pit_stops,
         "fetch_openf1_pit_stops",
-        lambda session_key: pit_rows,
+        lambda session_key, meeting_key=None: pit_rows,
     )
     monkeypatch.setattr(
         fetch_pit_stops,
