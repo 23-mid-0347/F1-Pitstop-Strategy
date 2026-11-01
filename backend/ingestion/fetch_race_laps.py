@@ -258,17 +258,46 @@ def get_scheduled_race_sessions(
 
 
 def fetch_openf1_race_sessions(year: int) -> list[dict[str, Any]]:
-    """Return OpenF1 race sessions for the season, ordered by start date."""
+    """Return race sessions enriched with meeting names from OpenF1's meetings endpoint.
+
+    The /sessions endpoint supplies session_key and meeting_key but does not
+    contain meeting_name. Those fields live on /meetings, so join the two
+    endpoints by meeting_key rather than trying to read a missing session field.
+    """
     if year < 2023:
         raise ValueError("OpenF1's free historical dataset starts in 2023.")
+
+    meetings = _get_openf1_json("meetings", {"year": year})
     sessions = _get_openf1_json("sessions", {"year": year})
-    races = [
-        session for session in sessions
-        if str(session.get("session_name", "")).strip().lower() == "race"
-    ]
+    meetings_by_key = {
+        str(meeting.get("meeting_key")): meeting
+        for meeting in meetings
+        if meeting.get("meeting_key") is not None
+    }
+
+    races: list[dict[str, Any]] = []
+    for session in sessions:
+        if str(session.get("session_type", "")).strip().lower() != "race":
+            continue
+        meeting = meetings_by_key.get(str(session.get("meeting_key")), {})
+        # Keep the session's own keys and dates, while adding the official
+        # meeting metadata required to match it against our stored schedule.
+        races.append({
+            **meeting,
+            **session,
+            "meeting_name": meeting.get("meeting_name"),
+            "meeting_official_name": meeting.get("meeting_official_name"),
+        })
+
     races.sort(key=lambda session: str(session.get("date_start") or ""))
     if not races:
         raise ValueError(f"OpenF1 returned no Race sessions for season {year}.")
+    missing_names = [race for race in races if not race.get("meeting_name")]
+    if missing_names:
+        raise ValueError(
+            "OpenF1 returned Race sessions without meeting names after joining "
+            "the /meetings and /sessions endpoints by meeting_key."
+        )
     return races
 
 
