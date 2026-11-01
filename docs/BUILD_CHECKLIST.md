@@ -79,10 +79,14 @@ Keep the degradation model, simulator, and optimizer as separate modules with ex
 - [x] Ingest all 22 2023 Race sessions from OpenF1: 24,479 lap rows processed.
 - [x] Validate all race groups in PostgreSQL: `lap_rows` matched `unique_laps` in all 22 races; there are 118 missing lap times and 92 each with missing compound, tyre age, and stint number.
 - [x] Capture compound, stint number, and derived tyre age in lap-level data where OpenF1 provides them.
-- [x] Add Jolpica historical pit-stop ingestion with dry-run support, mocked tests, and documented source-duration semantics; local tests and live dry-run are pending.
-- [ ] Ingest the 2023 pit-stop records and verify driver foreign keys, missing values, row counts, and repeat-run idempotency.
-- [ ] Implement weather ingestion.
-- [ ] Implement track-status-to-lap mapping for SC/VSC/red-flag periods, including a documented mid-lap policy.
+- [x] Add Jolpica historical pit-stop ingestion with dry-run support, mocked tests, and documented source-duration semantics.
+- [x] Dry-run all 22 2023 Race sessions: 911 source stops and 911 upsertable records; zero missing laps/durations and zero unknown-driver mappings.
+- [x] Ingest all 22 2023 Race sessions: 911 pit-stop records processed and written.
+- [x] Validate all 22 rounds in PostgreSQL: row counts match unique `(session_id, driver_id, stop_number)` identities; zero missing laps and durations.
+- [x] Repeat full-season pit-stop ingestion and verify idempotency: the database remained at 911 rows and 911 unique stop identities.
+- [x] Add the OpenF1 weather loader, dry-run support, mocked tests, and README instructions on `feat/race-lap-ingestion`; local validation is pending.
+- [ ] Pull and run the complete test suite and a live Bahrain weather dry-run; inspect row counts, timestamp exclusions, and sensor-field missingness before writing.
+- [ ] Ingest 2023 weather only after the one-round dry-run passes; verify row counts, `(session_id, recorded_at)` uniqueness, and repeat-run idempotency.
 - [ ] Populate and validate the separate `stints` table if it adds reliable value beyond lap-level tyre compound, stint number, and tyre age.
 - [ ] Verify every upsert updates all intended fields and run a full-season repeat test.
 
