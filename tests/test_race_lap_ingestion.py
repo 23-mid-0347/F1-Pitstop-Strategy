@@ -151,6 +151,56 @@ def test_match_openf1_race_session_fails_instead_of_guessing():
         )
 
 
+def test_fetch_openf1_race_sessions_joins_meeting_names(monkeypatch):
+    responses = {
+        "meetings": [
+            {
+                "meeting_key": 100,
+                "meeting_name": "Bahrain Grand Prix",
+                "meeting_official_name": "FORMULA 1 GULF AIR BAHRAIN GRAND PRIX 2023",
+            },
+            {
+                "meeting_key": 200,
+                "meeting_name": "Saudi Arabian Grand Prix",
+                "meeting_official_name": "FORMULA 1 STC SAUDI ARABIAN GRAND PRIX 2023",
+            },
+        ],
+        "sessions": [
+            {
+                "session_key": 11,
+                "meeting_key": 100,
+                "session_type": "Race",
+                "date_start": "2023-03-05T15:00:00+00:00",
+            },
+            {
+                "session_key": 12,
+                "meeting_key": 100,
+                "session_type": "Qualifying",
+                "date_start": "2023-03-04T15:00:00+00:00",
+            },
+            {
+                "session_key": 21,
+                "meeting_key": 200,
+                "session_type": "Race",
+                "date_start": "2023-03-19T17:00:00+00:00",
+            },
+        ],
+    }
+    monkeypatch.setattr(
+        fetch_race_laps,
+        "_get_openf1_json",
+        lambda endpoint, params: responses[endpoint],
+    )
+
+    races = fetch_race_laps.fetch_openf1_race_sessions(2023)
+
+    assert len(races) == 2
+    assert races[0]["meeting_name"] == "Bahrain Grand Prix"
+    assert races[0]["session_key"] == 11
+    assert races[1]["meeting_name"] == "Saudi Arabian Grand Prix"
+    assert races[1]["session_key"] == 21
+
+
 def test_dry_run_does_not_write_rows_or_open_transactions(monkeypatch):
     laps = pd.DataFrame([_lap_row()])
     monkeypatch.setattr(
