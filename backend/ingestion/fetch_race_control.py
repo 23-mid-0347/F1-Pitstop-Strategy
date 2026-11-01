@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import argparse
 from datetime import datetime, timedelta, timezone
-from statistics import median
 from typing import Any
 
 from ..database.connection import get_engine
