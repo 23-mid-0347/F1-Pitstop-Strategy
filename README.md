@@ -140,6 +140,29 @@ The loader uses Jolpica's Ergast-compatible `pitstops` and `results` endpoints t
 
 **Duration meaning:** `pit_stops.duration_ms` stores Jolpica's reported pit-stop duration converted to milliseconds. The source duration may include pit entry/exit and, in unusual cases, red-flag delay. It is not the incremental time lost versus continuing at normal racing pace, and it must not be added directly as strategy pit loss. The strategy model will need a separately calibrated pit-loss estimate.
 
+## Ingest Grand Prix weather
+
+The OpenF1 historical weather endpoint provides session weather observations at approximately one-minute intervals. Start with the 2023 Bahrain Grand Prix and inspect the source values before writing to PostgreSQL:
+
+```bash
+# Fetch and validate weather without writing to PostgreSQL
+python -m backend.ingestion.fetch_weather 2023 --round 1 --dry-run
+
+# Upsert the validated Bahrain weather records
+python -m backend.ingestion.fetch_weather 2023 --round 1
+```
+
+After verifying the one-round row counts and repeat-run behavior, preview or ingest the full 2023 season:
+
+```bash
+python -m backend.ingestion.fetch_weather 2023 --dry-run
+python -m backend.ingestion.fetch_weather 2023
+```
+
+The loader matches each stored Grand Prix Race session to OpenF1's `/sessions` and `/meetings` metadata, then reads `/weather?session_key=...`. It writes air temperature, track temperature, relative humidity, rainfall, wind speed, and the observation timestamp. The existing schema uses PostgreSQL `TIMESTAMP` without time zone, so timestamps are converted to UTC and stored as UTC-naive values. Missing sensor values are preserved as NULL; rows with invalid timestamps are excluded and counted because `(session_id, recorded_at)` is the upsert key. An empty weather response is treated as a source-data failure, not a successful empty race.
+
+The weather loader's first implementation and mocked tests are on `feat/race-lap-ingestion`; local tests and a live Bahrain dry-run must pass before database writes. See the [OpenF1 API documentation](https://openf1.org/docs/).
+
 ## Repository layout
 
 ```text
