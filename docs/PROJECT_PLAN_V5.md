@@ -216,17 +216,22 @@ Checkboxes distinguish code already committed from local checks still pending. C
 
 ### Milestone 1 — one-season ingestion
 - [x] Add schedule/event/session loader and mocked tests; merge to `main`.
-- [x] Verify the 2023 schedule locally: 22 events, 110 sessions, and repeat-run counts remain 1 season, 22 events, 110 sessions.
-- [x] Add initial race-lap ingestion code and mocked tests on branch `feat/race-lap-ingestion`.
-- [ ] Run expanded tests and one-round FastF1 dry-run locally.
-- [ ] Apply the lap metadata schema changes from `backend/` using `python -m database.init_db`.
-- [ ] Ingest round 1 and inspect stored lap counts, missing lap times, tyre age, compound, flags, and track-status values.
-- [ ] Verify repeated lap ingestion updates existing rows without increasing session/driver/lap identities.
-- [ ] Run the full 2023 set of Race sessions after the one-round smoke test succeeds.
-- [ ] Add separate pit-stop, weather, and SC/VSC/red-flag period ingestion with documented time-to-lap and mid-lap policies.
-- [ ] Populate/validate the separate `stints` table if it adds reliable value beyond lap-level `Stint`, `Compound`, `TyreLife`, and `FreshTyre`.
+- [x] Verify 2023 schedule locally: 22 events, 110 sessions, with idempotent repeat loads.
+- [x] Add OpenF1 historical race-lap ingestion and mocked tests on `feat/race-lap-ingestion`.
+- [x] Apply lap metadata schema changes with `python -m database.init_db`.
+- [x] Dry-run and ingest Bahrain 2023, then repeat it: 1,058 lap rows and 1,058 unique identities remained after re-run.
+- [x] Ingest all 22 2023 Race sessions: 24,479 lap rows processed.
+- [x] Query all race rounds in PostgreSQL: `lap_rows` matched `unique_laps` in each round. Source nulls observed: 118 missing lap times and 92 each missing compound, tyre age and stint number.
+- [x] Handle OpenF1 session metadata correctly by joining `meetings` and `sessions` on `meeting_key`, and select `session_name == "Race"` to exclude Sprint sessions.
+- [x] Add pit-stop ingestion with dry-run support and mocked tests, now using Jolpica's Ergast-compatible historical `pitstops` and `results` endpoints. OpenF1's `/pit` returned HTTP 404 for both Bahrain session and meeting queries.
+- [ ] Pull and locally test the Jolpica pit-stop loader; dry-run Bahrain, inspect pit counts/driver mappings/nulls, ingest round 1, and verify idempotency.
+- [ ] Run pit-stop ingestion across 2023 after the one-round checks pass.
+- [ ] Add weather ingestion.
+- [ ] Add track-status-to-lap mapping for SC/VSC/red-flag periods with a documented mid-lap policy.
+- [ ] Populate/validate the separate `stints` table if it adds reliable value beyond lap-level compound, stint number and tyre age.
+- [ ] Recheck foreign keys and idempotency before closing Milestone 1.
 
-**Exit:** one-season ingestion is repeatable, preserves raw source fields and quality flags, and has documented counts, nulls, units and failures.
+**Exit:** schedule, lap and pit-stop ingestion is repeatable, and source values, nulls, units and failures are documented.
 
 ### Milestone 2 — data quality
 - [ ] Build clean Race-session dataset and explicit filter rules.
@@ -290,40 +295,33 @@ Checkboxes distinguish code already committed from local checks still pending. C
 
 ## 8. Exact immediate next step
 
-The schedule layer has passed a local idempotency check. The next code is staged on `feat/race-lap-ingestion`, not merged into `main` yet.
+The user has locally verified the 2023 schedule and the full race-lap ingestion on `feat/race-lap-ingestion`. Results:
+- 22 events and 110 sessions in the schedule.
+- 24,479 lap rows processed across the 22 2023 Grand Prix Race sessions.
+- All 22 rounds had equal `lap_rows` and `unique_laps` in the PostgreSQL quality query.
+- Bahrain was re-ingested and remained at 1,058 rows and 1,058 unique lap identities.
+- Observed source nulls: 118 lap times and 92 each for compound, tyre age and stint number.
 
-After switching to that branch, run the expanded mocked test suite:
+The first pit-stop loader used OpenF1's `/pit` endpoint, but live requests returned HTTP 404 for both Bahrain session key 7953 and meeting key 1141. To avoid treating missing OpenF1 results as pit stops or making up values, the loader is now switched to Jolpica's Ergast-compatible historical `pitstops` and `results` endpoints. This latest implementation and its tests are not locally verified yet.
 
-    git fetch origin
-    git switch --track -c feat/race-lap-ingestion origin/feat/race-lap-ingestion
-    python -m pytest -q
+From the repository root:
+```bash
+git pull --ff-only origin feat/race-lap-ingestion
+python -m pytest -q
+cd backend
+python -m database.init_db
+cd ..
+python -m backend.ingestion.fetch_pit_stops 2023 --round 1 --dry-run
+```
 
-The expected test count is the original 3 database configuration tests, 6 schedule tests, and 8 new lap-ingestion tests (17 total). Treat the actual pytest output as authoritative.
+Verify that the test suite passes, the schema initialization succeeds, and the dry-run reports a plausible Bahrain stop list with driver codes and source durations. Only then write Bahrain pit-stop rows:
+```bash
+python -m backend.ingestion.fetch_pit_stops 2023 --round 1
+```
 
-Then apply new lap metadata columns safely (from the backend directory):
+Query pit-stop row counts, check driver foreign keys and nulls, then re-run round 1 and verify the count does not increase. Do not run full-season pit-stop ingestion or merge the PR before those checks pass.
 
-    cd backend
-    python -m database.init_db
-    cd ..
-
-Check FastF1 authentication status if required, then run a one-round dry-run first:
-
-    python -m fastf1 auth f1tv --status
-    python -m backend.ingestion.fetch_race_laps 2023 --round 1 --dry-run
-
-If timing-data access asks for authentication, use FastF1's documented interactive flow:
-
-    python -m fastf1 auth f1tv --authenticate
-
-After the dry-run output is sensible, ingest round 1:
-
-    python -m backend.ingestion.fetch_race_laps 2023 --round 1
-
-Inspect the resulting lap rows and re-run round 1 to verify counts and unique session/driver/lap keys remain unchanged. Only after this succeeds, ingest all 2023 Race sessions:
-
-    python -m backend.ingestion.fetch_race_laps 2023
-
-Do not build the tyre model until lap coverage, tyre-age provenance, nulls, quality flags, and duplicate-free re-runs have been inspected. Keep all credentials private.
+Pit duration is the source-reported duration converted to milliseconds. It is not incremental time lost versus normal green-flag racing pace, and may include pit entry/exit or red-flag delay in unusual cases. Do not add the raw duration directly into simulated time. Keep credentials private and do not attempt F1TV authentication for this project path.
 
 ## 9. Research positioning
 
