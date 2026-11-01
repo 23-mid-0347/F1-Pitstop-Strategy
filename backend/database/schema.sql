@@ -108,3 +108,18 @@ ALTER TABLE events ADD COLUMN IF NOT EXISTS country TEXT;
 ALTER TABLE events ADD COLUMN IF NOT EXISTS location TEXT;
 ALTER TABLE events ADD COLUMN IF NOT EXISTS official_event_name TEXT;
 ALTER TABLE events ADD COLUMN IF NOT EXISTS event_format TEXT;
+
+
+-- Preserve source tyre-age, pit-lap, track-status and quality indicators for modelling.
+ALTER TABLE lap_times ADD COLUMN IF NOT EXISTS stint_number INT;
+ALTER TABLE lap_times ADD COLUMN IF NOT EXISTS tyre_age DOUBLE PRECISION;
+ALTER TABLE lap_times ADD COLUMN IF NOT EXISTS fresh_tyre BOOLEAN;
+ALTER TABLE lap_times ADD COLUMN IF NOT EXISTS pit_in_lap BOOLEAN;
+ALTER TABLE lap_times ADD COLUMN IF NOT EXISTS pit_out_lap BOOLEAN;
+ALTER TABLE lap_times ADD COLUMN IF NOT EXISTS track_status TEXT;
+ALTER TABLE lap_times ADD COLUMN IF NOT EXISTS is_accurate BOOLEAN;
+ALTER TABLE lap_times ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN;
+ALTER TABLE lap_times ADD COLUMN IF NOT EXISTS deleted_reason TEXT;
+ALTER TABLE lap_times ADD COLUMN IF NOT EXISTS fastf1_generated BOOLEAN;
+ALTER TABLE lap_times ADD COLUMN IF NOT EXISTS lap_start_time_ms BIGINT;
+ALTER TABLE lap_times ADD COLUMN IF NOT EXISTS lap_end_time_ms BIGINT;
