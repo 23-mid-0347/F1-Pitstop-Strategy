@@ -298,7 +298,7 @@ After switching to that branch, run the expanded mocked test suite:
     git switch --track -c feat/race-lap-ingestion origin/feat/race-lap-ingestion
     python -m pytest -q
 
-The expected test count is the original 3 database configuration tests, 6 schedule tests, and 7 new lap-ingestion tests. Treat the actual pytest output as authoritative.
+The expected test count is the original 3 database configuration tests, 6 schedule tests, and 8 new lap-ingestion tests (17 total). Treat the actual pytest output as authoritative.
 
 Then apply new lap metadata columns safely (from the backend directory):
 
