@@ -251,6 +251,51 @@ def insert_weather(conn, session_id, recorded_at, air_temp, track_temp, humidity
     )
 
 
+def insert_safety_car_period(
+    conn,
+    session_id,
+    start_time,
+    end_time,
+    start_lap,
+    end_lap,
+    period_type,
+    end_inferred,
+    start_lap_method,
+    end_lap_method,
+):
+    """Insert or refresh one source-timestamped neutralisation period."""
+    conn.execute(
+        text("""
+            INSERT INTO safety_car_periods (
+                session_id, start_time, end_time, start_lap, end_lap,
+                period_type, end_inferred, start_lap_method, end_lap_method
+            )
+            VALUES (
+                :session_id, :start_time, :end_time, :start_lap, :end_lap,
+                :period_type, :end_inferred, :start_lap_method, :end_lap_method
+            )
+            ON CONFLICT (session_id, start_time, period_type) DO UPDATE SET
+                end_time = EXCLUDED.end_time,
+                start_lap = EXCLUDED.start_lap,
+                end_lap = EXCLUDED.end_lap,
+                end_inferred = EXCLUDED.end_inferred,
+                start_lap_method = EXCLUDED.start_lap_method,
+                end_lap_method = EXCLUDED.end_lap_method
+        """),
+        {
+            "session_id": session_id,
+            "start_time": start_time,
+            "end_time": end_time,
+            "start_lap": start_lap,
+            "end_lap": end_lap,
+            "period_type": period_type,
+            "end_inferred": end_inferred,
+            "start_lap_method": start_lap_method,
+            "end_lap_method": end_lap_method,
+        },
+    )
+
+
 def get_driver_id_by_code(conn, code: str):
     row = conn.execute(text("SELECT driver_id FROM drivers WHERE driver_code = :code"), {"code": code}).first()
     return row[0] if row else None
