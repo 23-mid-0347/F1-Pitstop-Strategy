@@ -139,6 +139,8 @@ def insert_lap(
     fastf1_generated=None,
     lap_start_time_ms=None,
     lap_end_time_ms=None,
+    lap_start_at=None,
+    lap_end_at=None,
 ):
     """Insert or refresh one raw lap and its source quality/context fields."""
     conn.execute(
@@ -147,13 +149,15 @@ def insert_lap(
                 session_id, driver_id, lap_number, lap_time_ms, tire_compound,
                 stint_number, tyre_age, fresh_tyre, pit_in_lap, pit_out_lap,
                 track_status, is_accurate, is_deleted, deleted_reason,
-                fastf1_generated, lap_start_time_ms, lap_end_time_ms
+                fastf1_generated, lap_start_time_ms, lap_end_time_ms,
+                lap_start_at, lap_end_at
             )
             VALUES (
                 :session_id, :driver_id, :lap_number, :lap_time_ms, :tire_compound,
                 :stint_number, :tyre_age, :fresh_tyre, :pit_in_lap, :pit_out_lap,
                 :track_status, :is_accurate, :is_deleted, :deleted_reason,
-                :fastf1_generated, :lap_start_time_ms, :lap_end_time_ms
+                :fastf1_generated, :lap_start_time_ms, :lap_end_time_ms,
+                :lap_start_at, :lap_end_at
             )
             ON CONFLICT (session_id, driver_id, lap_number) DO UPDATE SET
                 lap_time_ms = EXCLUDED.lap_time_ms,
@@ -169,7 +173,9 @@ def insert_lap(
                 deleted_reason = EXCLUDED.deleted_reason,
                 fastf1_generated = EXCLUDED.fastf1_generated,
                 lap_start_time_ms = EXCLUDED.lap_start_time_ms,
-                lap_end_time_ms = EXCLUDED.lap_end_time_ms
+                lap_end_time_ms = EXCLUDED.lap_end_time_ms,
+                lap_start_at = EXCLUDED.lap_start_at,
+                lap_end_at = EXCLUDED.lap_end_at
         """),
         {
             "session_id": session_id,
@@ -189,6 +195,8 @@ def insert_lap(
             "fastf1_generated": fastf1_generated,
             "lap_start_time_ms": lap_start_time_ms,
             "lap_end_time_ms": lap_end_time_ms,
+            "lap_start_at": lap_start_at,
+            "lap_end_at": lap_end_at,
         },
     )
 
