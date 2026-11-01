@@ -22,7 +22,7 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 from ..database.connection import get_engine
-from .fetch_race_laps import _clean_text, _positive_int
+from .fetch_race_laps import _clean_text, _positive_int, get_scheduled_race_sessions
 from .utils import insert_pit_stop, upsert_driver
 
 JOLPICA_API_BASE = "https://api.jolpi.ca/ergast/f1"
