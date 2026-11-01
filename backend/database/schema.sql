@@ -85,7 +85,7 @@ CREATE TABLE IF NOT EXISTS weather (
     UNIQUE (session_id, recorded_at)
 );
 
--- NEW — not in the RAG project, central to this one
+-- Central to the pit-stop strategy project; not part of the F1 RAG database.
 CREATE TABLE IF NOT EXISTS safety_car_periods (
     period_id       SERIAL PRIMARY KEY,
     session_id      INT NOT NULL REFERENCES sessions(session_id) ON DELETE CASCADE,
@@ -101,3 +101,10 @@ CREATE INDEX IF NOT EXISTS idx_pitstops_session_driver ON pit_stops(session_id, 
 CREATE INDEX IF NOT EXISTS idx_stints_session_driver ON stints(session_id, driver_id);
 CREATE INDEX IF NOT EXISTS idx_weather_session ON weather(session_id);
 CREATE INDEX IF NOT EXISTS idx_safetycar_session ON safety_car_periods(session_id);
+
+-- Preserve schedule fields that FastF1 supplies before a formal circuit name is
+-- resolved. These ALTERs also upgrade databases initialized from an older schema.
+ALTER TABLE events ADD COLUMN IF NOT EXISTS country TEXT;
+ALTER TABLE events ADD COLUMN IF NOT EXISTS location TEXT;
+ALTER TABLE events ADD COLUMN IF NOT EXISTS official_event_name TEXT;
+ALTER TABLE events ADD COLUMN IF NOT EXISTS event_format TEXT;
