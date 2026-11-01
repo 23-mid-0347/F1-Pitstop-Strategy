@@ -73,13 +73,16 @@ Keep the degradation model, simulator, and optimizer as separate modules with ex
 ### Milestone 1 — Database and one-season ingestion
 - [x] Correct the init script usage comment and standardize module invocation.
 - [x] Add the initial schedule/event/session ingestion script (`backend/ingestion/fetch_schedule.py`) and mocked unit tests on branch `feat/schedule-ingestion`.
-- [ ] Run the full test suite and schedule dry-run locally; initialize the new schedule metadata columns; ingest the 2023 schedule twice and verify event/session counts remain unchanged.
-- [ ] Implement lap ingestion, preserving time units and missing values.
+- [x] Verify schedule ingestion locally: dry-run found 22 events and 110 sessions; full ingestion completed and a repeat run left counts at 1 season, 22 events, and 110 sessions.
+- [x] Add an initial race-lap ingestion script with mocked normalization/upsert tests on `feat/race-lap-ingestion`; local tests and a live one-round dry-run are pending.
+- [ ] Run the expanded tests, initialize the added lap metadata columns, dry-run round 1, and only then write round 1 lap data.
+- [ ] Run all 2023 Race sessions and validate row counts, nullable timing fields, tyre-age provenance, and duplicate-free re-runs.
 - [ ] Implement stint/compound ingestion with reliable tyre-age derivation.
 - [ ] Implement pit-stop ingestion and document what duration means.
 - [ ] Implement weather ingestion.
 - [ ] Implement track-status-to-lap mapping for SC/VSC/red-flag periods, including mid-lap policy.
-- [ ] Ensure upserts are idempotent and update every intended field.
+- [ ] Populate and validate the separate `stints` table where useful; lap-level tyre compound, stint number, `TyreLife`, and `FreshTyre` are already captured by the initial lap loader.
+- [ ] Ensure all upserts are idempotent and update every intended field.
 - [ ] Run one complete season and verify row counts and foreign-key relationships.
 
 **Exit condition:** re-running ingestion does not duplicate rows; failed sessions are logged; source-to-database checks pass.
