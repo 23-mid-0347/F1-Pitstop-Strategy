@@ -2,7 +2,7 @@
 
 Repository: https://github.com/23-mid-0347/F1-Pitstop-Strategy  
 Plan reviewed: Project Plan V5  
-Review date: 2026-11-01
+Review date: 2026-11-02
 
 ## Goal
 
@@ -163,21 +163,19 @@ Keep the degradation model, simulator, and optimizer as separate modules with ex
 
 ## Immediate next task
 
-The user has locally verified the schedule and full 2023 race-lap ingestion. The lap loader processed 24,479 rows across 22 races, and the season-wide validation query reported equal `lap_rows` and `unique_laps` for every round. Bahrain re-run idempotency is verified. Missing source values remain nullable: 118 lap times and 92 each for compound, tyre age and stint number.
+**Pit-stop ingestion is verified for 2023:** the local dry-run reported 911 source and upsertable records across 22 Grand Prix races; PostgreSQL contains 911 rows and 911 unique `(session_id, driver_id, stop_number)` identities, with no missing lap numbers or durations. A second full-season ingestion left those counts unchanged. The reported dry-run also found no unknown driver mappings. The pit-stop duration must still not be interpreted as incremental pit loss versus green-flag pace.
 
-The first pit-stop loader attempt used OpenF1's `/pit` endpoint, but the live API returned HTTP 404 for both the Bahrain session key (7953) and meeting key (1141). The pit-stop loader has therefore been switched to Jolpica's Ergast-compatible historical `pitstops` and `results` endpoints, which return the race's stop records and provide driver-ID-to-code mappings. This source switch and the new tests have **not yet been run locally**.
+The weather-loader implementation and mocked tests have now been added to `feat/race-lap-ingestion`, but they have not yet been run in the user's local environment.
 
-The pit-stop duration is preserved from the historical source and converted to milliseconds. It must not be treated as incremental pit loss versus green-flag racing pace; source durations may include entry/exit and, in unusual circumstances, red-flag delay.
+From the repository root on the user's Mac:
+1. Run `git pull --ff-only origin feat/race-lap-ingestion`.
+2. Run `python -m pytest -q` and resolve any failure before live downloads.
+3. Run `python -m backend.ingestion.fetch_weather 2023 --round 1 --dry-run`.
+4. Inspect row counts, excluded invalid timestamps, and missing sensor-field counts. An empty response or a failed session match must be investigated rather than treated as successful ingestion.
+5. Only after the dry-run and tests pass, run `python -m backend.ingestion.fetch_weather 2023 --round 1`, verify PostgreSQL counts and uniqueness on `(session_id, recorded_at)`, then repeat the round to verify idempotency.
+6. Ingest all 2023 Race-session weather only after the Bahrain write and repeat-run checks pass.
 
-Next, on the user's Mac:
-1. Pull the latest `feat/race-lap-ingestion` branch.
-2. Run `python -m pytest -q` and share any failure output.
-3. Run `cd backend && python -m database.init_db && cd ..` to verify the updated schema comment.
-4. Run `python -m backend.ingestion.fetch_pit_stops 2023 --round 1 --dry-run`.
-5. If the dry-run matches a credible Bahrain pit-stop list, ingest the round without `--dry-run`, query the row count and foreign-key mappings, and repeat once to verify idempotency.
-6. Only then consider the full 2023 pit-stop ingestion.
-
-Do not merge the pull request until the pit-stop loader has passed local tests, a live one-round dry-run, one-round write verification and idempotency. The Jolpica client spaces API requests conservatively.
+Keep raw/source weather fields and missing values auditable. The schema stores `recorded_at` as a timezone-naive PostgreSQL `TIMESTAMP`, so the loader explicitly converts OpenF1's UTC timestamps to UTC-naive datetimes. Do not proceed to event modelling until weather ingestion has source and database validation evidence.
 
 ## Research notes
 
