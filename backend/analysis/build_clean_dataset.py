@@ -193,7 +193,7 @@ def summarize_cleaning(
     excluded: Sequence[Mapping[str, Any]],
 ) -> dict[str, Any]:
     """Aggregate attrition and identify critical source fields that are unavailable."""
-    reasons = _count_by(excluded, "exclusion_reason")
+    reason_counts = _count_by(excluded, "exclusion_reason")
     rounds = sorted({int(row["round_number"]) for row in raw_rows})
     session_ids = {int(row["session_id"]) for row in raw_rows}
     circuit_mapped = {
@@ -226,7 +226,7 @@ def summarize_cleaning(
         "inclusion_rate": len(included) / len(raw_rows) if raw_rows else 0.0,
         "race_sessions": len(session_ids),
         "race_rounds": len(rounds),
-        "exclusion_reason_counts": reasons,
+        "exclusion_reason_counts": reason_counts,
         "missing_track_status_rows": sum(row.get("track_status") is None for row in raw_rows),
         "missing_pit_in_flag_rows": sum(row.get("pit_in_lap") is None for row in raw_rows),
         "missing_pit_out_flag_rows": sum(row.get("pit_out_lap") is None for row in raw_rows),
@@ -273,7 +273,6 @@ def render_attrition_report(
         "| Reason | Rows | Rule |",
         "|---|---:|---|",
     ]
-    rules = dict(EXCLUSION_RULES)
     for reason, description in EXCLUSION_RULES:
         lines.append(f"| {reason} | {summary['exclusion_reason_counts'].get(reason, 0)} | {description} |")
     lines.extend([
