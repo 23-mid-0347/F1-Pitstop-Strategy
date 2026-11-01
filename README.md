@@ -185,6 +185,18 @@ Red flags are represented separately as `RedFlag` periods, but this is an initia
 
 See the [OpenF1 API documentation](https://openf1.org/docs/) for race-control fields.
 
+## Audit stored data coverage
+
+After ingestion, run this database-backed inventory from the repository root:
+
+```bash
+python -m backend.analysis.audit_data_coverage 2023
+```
+
+The audit writes `reports/data_coverage_2023.csv` (one row per scheduled Grand Prix Race session) and `reports/data_coverage_2023.md` (a season summary and per-race table). It reports stored lap, pit-stop, weather, and race-control counts; duplicate identity differences; and nullable-field counts. It does not download data and can run while OpenF1's public API is unavailable.
+
+This is a raw-data inventory, not the clean modelling dataset. It does not yet record exclusions from the ingestion process because those loader counters are not persisted in the database. Treat missing race-control periods as unknown until the race-control loader has successfully run; absence of stored periods does not mean a race had no Safety Car/VSC/red-flag events.
+
 ## Repository layout
 
 ```text
@@ -195,7 +207,7 @@ See the [OpenF1 API documentation](https://openf1.org/docs/) for race-control fi
 │   │   ├── init_db.py
 │   │   ├── check_connection.py
 │   │   └── schema.sql
-│   └── ingestion/
+│   ├── analysis/\n│   │   └── audit_data_coverage.py\n│   └── ingestion/
 │       ├── fetch_schedule.py
 │       ├── fetch_race_laps.py
 │       ├── fetch_pit_stops.py
@@ -211,7 +223,7 @@ See the [OpenF1 API documentation](https://openf1.org/docs/) for race-control fi
 │   ├── test_race_lap_ingestion.py
 │   ├── test_pit_stop_ingestion.py
 │   ├── test_weather_ingestion.py
-│   └── test_race_control_ingestion.py
+│   ├── test_race_control_ingestion.py\n│   └── test_data_coverage_audit.py
 ├── .env.example
 ├── .gitignore
 ├── .python-version
