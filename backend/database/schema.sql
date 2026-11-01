@@ -141,7 +141,15 @@ ALTER TABLE lap_times ADD COLUMN IF NOT EXISTS deleted_reason TEXT;
 ALTER TABLE lap_times ADD COLUMN IF NOT EXISTS fastf1_generated BOOLEAN;
 ALTER TABLE lap_times ADD COLUMN IF NOT EXISTS lap_start_time_ms BIGINT;
 ALTER TABLE lap_times ADD COLUMN IF NOT EXISTS lap_end_time_ms BIGINT;
+ALTER TABLE lap_times ADD COLUMN IF NOT EXISTS lap_start_at TIMESTAMP;
+ALTER TABLE lap_times ADD COLUMN IF NOT EXISTS lap_end_at TIMESTAMP;
 
 -- Preserve source duration semantics so modelling does not mistake this for incremental pit loss.
 COMMENT ON COLUMN pit_stops.duration_ms IS
     'Source-reported pit-stop duration in milliseconds, not incremental pit loss versus normal racing pace. May include pit entry, exit, or red-flag delay.';
+
+
+COMMENT ON COLUMN lap_times.lap_start_at IS
+    'Approximate UTC lap start timestamp sourced from OpenF1 laps.date_start; stored as UTC-naive TIMESTAMP';
+COMMENT ON COLUMN lap_times.lap_end_at IS
+    'Derived approximate UTC lap end timestamp: OpenF1 laps.date_start plus laps.lap_duration; stored as UTC-naive TIMESTAMP';
