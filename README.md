@@ -197,6 +197,24 @@ The audit writes `reports/data_coverage_2023.csv` (one row per scheduled Grand P
 
 This is a raw-data inventory, not the clean modelling dataset. It does not yet record exclusions from the ingestion process because those loader counters are not persisted in the database. Treat missing race-control periods as unknown until the race-control loader has successfully run; absence of stored periods does not mean a race had no Safety Car/VSC/red-flag events.
 
+## Build the preliminary clean tyre-pace dataset
+
+After reviewing the coverage inventory, run:
+
+```bash
+python -m backend.analysis.build_clean_dataset 2023
+```
+
+The script reads stored Race-session lap records and writes:
+- `data/processed/modeling_laps_2023.csv` — rows eligible for a preliminary lap-time-versus-tyre-age model.
+- `reports/data_exclusions_2023.csv` — each excluded driver-lap, with one primary reason.
+- `reports/data_attrition_2023.md` — total attrition and per-race exclusion counts.
+- `reports/cleaning_manifest_2023.json` — ruleset version, counts and SHA-256 checksums.
+
+Ruleset version 1.0.0 excludes explicitly deleted/inaccurate laps, known pit-in/out laps, recorded non-clear track-status values, invalid lap times, unsupported or missing compound labels, and missing/invalid/negative tyre ages. Each excluded row is assigned only its first matching reason in the published priority order. A missing stint number alone does not exclude a lap if the required fields are present. The script does not apply arbitrary high-lap-time trimming or impute data.
+
+The first dataset is preliminary, not final research evidence. All track-status fields, pit-in flags, and persisted lap start/end offsets were missing in the current coverage report; accordingly, neutralised laps cannot yet be reliably excluded, pit-in laps can only be excluded when explicitly flagged, and weather is not joined to individual laps. Circuit IDs/names are unresolved for the current schedule. These gaps must be addressed or clearly treated as limitations before final model evaluation. The original PostgreSQL tables remain unchanged.
+
 ## Repository layout
 
 ```text
@@ -207,7 +225,7 @@ This is a raw-data inventory, not the clean modelling dataset. It does not yet r
 │   │   ├── init_db.py
 │   │   ├── check_connection.py
 │   │   └── schema.sql
-│   ├── analysis/\n│   │   └── audit_data_coverage.py\n│   └── ingestion/
+│   ├── analysis/\n│   │   ├── audit_data_coverage.py\n│   │   └── build_clean_dataset.py\n│   └── ingestion/
 │       ├── fetch_schedule.py
 │       ├── fetch_race_laps.py
 │       ├── fetch_pit_stops.py
@@ -223,7 +241,7 @@ This is a raw-data inventory, not the clean modelling dataset. It does not yet r
 │   ├── test_race_lap_ingestion.py
 │   ├── test_pit_stop_ingestion.py
 │   ├── test_weather_ingestion.py
-│   ├── test_race_control_ingestion.py\n│   └── test_data_coverage_audit.py
+│   ├── test_race_control_ingestion.py\n│   ├── test_data_coverage_audit.py\n│   └── test_clean_dataset.py
 ├── .env.example
 ├── .gitignore
 ├── .python-version
