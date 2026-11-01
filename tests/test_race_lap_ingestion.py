@@ -1,4 +1,5 @@
 from contextlib import nullcontext
+
 import pandas as pd
 import pytest
 
@@ -42,6 +43,8 @@ def test_normalize_laps_preserves_timing_tyre_and_quality_fields():
     }
     lap = records[0]
     assert lap["driver_code"] == "VER"
+    assert lap["full_name"] == "VER"
+    assert lap["nationality"] is None
     assert lap["lap_number"] == 1
     assert lap["lap_time_ms"] == 90123
     assert lap["tire_compound"] == "SOFT"
@@ -56,6 +59,32 @@ def test_normalize_laps_preserves_timing_tyre_and_quality_fields():
     assert lap["fastf1_generated"] is False
     assert lap["lap_start_time_ms"] == 120000
     assert lap["lap_end_time_ms"] == 210123
+
+
+def test_normalize_laps_uses_openf1_pit_out_flag_and_driver_details():
+    row = {
+        "Driver": "NOR",
+        "DriverName": "Lando Norris",
+        "Nationality": "GBR",
+        "LapNumber": 2,
+        "LapTime": pd.Timedelta(seconds=92.5),
+        "is_pit_out_lap": True,
+    }
+    records, _ = fetch_race_laps.normalize_laps(pd.DataFrame([row]))
+
+    lap = records[0]
+    assert lap["driver_code"] == "NOR"
+    assert lap["full_name"] == "Lando Norris"
+    assert lap["nationality"] == "GBR"
+    assert lap["lap_time_ms"] == 92500
+    assert lap["pit_out_lap"] is True
+    # OpenF1 does not expose these FastF1-specific flags in its lap response.
+    assert lap["pit_in_lap"] is None
+    assert lap["track_status"] is None
+    assert lap["is_accurate"] is None
+    assert lap["is_deleted"] is None
+    assert lap["lap_start_time_ms"] is None
+    assert lap["lap_end_time_ms"] is None
 
 
 def test_normalize_laps_preserves_missing_lap_time_and_pit_out_flag():
@@ -101,9 +130,29 @@ def test_normalize_laps_requires_identity_and_laptime_columns():
         fetch_race_laps.normalize_laps(pd.DataFrame({"Driver": ["VER"]}))
 
 
+def test_match_openf1_race_session_ignores_grand_prix_suffix():
+    sessions = [
+        {"meeting_name": "Bahrain Grand Prix", "session_key": 123},
+        {"meeting_name": "Saudi Arabian Grand Prix", "session_key": 456},
+    ]
+
+    matched = fetch_race_laps.match_openf1_race_session(
+        "Bahrain Grand Prix", sessions
+    )
+
+    assert matched["session_key"] == 123
+
+
+def test_match_openf1_race_session_fails_instead_of_guessing():
+    with pytest.raises(ValueError, match="Could not match scheduled event"):
+        fetch_race_laps.match_openf1_race_session(
+            "A Grand Prix Not In The Source",
+            [{"meeting_name": "Bahrain Grand Prix", "session_key": 123}],
+        )
+
+
 def test_dry_run_does_not_write_rows_or_open_transactions(monkeypatch):
     laps = pd.DataFrame([_lap_row()])
-    monkeypatch.setattr(fetch_race_laps, "setup_fastf1_cache", lambda: None)
     monkeypatch.setattr(
         fetch_race_laps,
         "get_scheduled_race_sessions",
@@ -111,7 +160,12 @@ def test_dry_run_does_not_write_rows_or_open_transactions(monkeypatch):
             {"round_number": 1, "event_name": "Bahrain Grand Prix", "session_id": 11}
         ],
     )
-    monkeypatch.setattr(fetch_race_laps, "fetch_fastf1_race_laps", lambda year, round_number: laps)
+    monkeypatch.setattr(
+        fetch_race_laps,
+        "fetch_openf1_race_sessions",
+        lambda year: [{"meeting_name": "Bahrain Grand Prix", "session_key": 123}],
+    )
+    monkeypatch.setattr(fetch_race_laps, "fetch_openf1_race_laps", lambda session_key: laps)
 
     class FakeEngine:
         disposed = False
@@ -133,6 +187,11 @@ def test_dry_run_does_not_write_rows_or_open_transactions(monkeypatch):
     assert engine.disposed is True
 
 
+def test_dry_run_rejects_pre_2023_openf1_year():
+    with pytest.raises(ValueError, match="starts in 2023"):
+        fetch_race_laps.ingest_race_laps(2022, dry_run=True)
+
+
 def test_persist_laps_upserts_driver_and_forwards_tyre_age(monkeypatch):
     calls = []
 
@@ -146,7 +205,8 @@ def test_persist_laps_upserts_driver_and_forwards_tyre_age(monkeypatch):
         "upsert_driver",
         lambda connection, code, full_name, nationality: calls.append(
             ("driver", code, full_name, nationality)
-        ) or 42,
+        )
+        or 42,
     )
     monkeypatch.setattr(
         fetch_race_laps,
