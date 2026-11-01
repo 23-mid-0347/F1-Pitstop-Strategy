@@ -1,8 +1,8 @@
 # F1 Pit Stop Strategy Optimizer — Plan Alignment and Build Checklist
 
 Repository: https://github.com/23-mid-0347/F1-Pitstop-Strategy  
-Plan reviewed: Project Plan v4  
-Review date: 2026-10-27
+Plan reviewed: Project Plan V5  
+Review date: 2026-11-01
 
 ## Goal
 
@@ -68,11 +68,12 @@ Keep the degradation model, simulator, and optimizer as separate modules with ex
 
 **Exit condition:** a clean environment can install dependencies and initialize the schema using documented commands.
 
-**Current progress:** repository files and test commands are committed. The Python tests and live PostgreSQL/schema initialization have not been executed in this remote review environment; run the verification commands in the README before closing this milestone.
+**Current progress (2026-11-01):** the user verified the local environment on macOS with Python 3.14.5. Dependency installation reported requirements already satisfied; `python -m pytest -q` passed (3 tests); `database.check_connection` returned OK; `database.init_db` initialized 18 statements; and `psql \dt` showed all 11 expected tables. Milestone 0's exit checks are satisfied for the reported local environment.
 
 ### Milestone 1 — Database and one-season ingestion
 - [x] Correct the init script usage comment and standardize module invocation.
-- [ ] Implement schedule/event/session ingestion.
+- [x] Add the initial schedule/event/session ingestion script (`backend/ingestion/fetch_schedule.py`) and mocked unit tests on branch `feat/schedule-ingestion`.
+- [ ] Run the full test suite and schedule dry-run locally; initialize the new schedule metadata columns; ingest the 2023 schedule twice and verify event/session counts remain unchanged.
 - [ ] Implement lap ingestion, preserving time units and missing values.
 - [ ] Implement stint/compound ingestion with reliable tyre-age derivation.
 - [ ] Implement pit-stop ingestion and document what duration means.
@@ -158,7 +159,7 @@ Keep the degradation model, simulator, and optimizer as separate modules with ex
 
 ## Immediate next task
 
-Milestone 0 repository scaffolding is committed. Run the local verification commands in the README before closing the milestone: install dependencies, execute `python -m pytest -q`, check PostgreSQL with `python -m database.check_connection`, and initialize the schema with `python -m database.init_db`. Once those pass, move to **Milestone 1**: implement schedule/event/session ingestion first, then load one season and verify row counts before extending the loader to laps, stints, pit stops, weather and track-status periods.
+Milestone 0 has been verified on the user's Mac as of 2026-11-01: dependencies are present, 3 configuration tests pass, PostgreSQL connection succeeds, schema initialization succeeds, and all 11 expected tables are present. Branch `feat/schedule-ingestion` contains the initial FastF1 schedule loader, event metadata columns, and mocked tests. After checking out that branch, run `python -m pytest -q`, run `python -m backend.ingestion.fetch_schedule 2023 --dry-run`, apply the updated schema from `backend/`, then ingest 2023 and repeat the ingestion. Confirm event/session counts are unchanged on the second run before adding lap, stint, pit-stop, weather, and track-status loaders.
 
 ## Research notes
 
