@@ -1,4 +1,5 @@
 import os
+
 import fastf1
 import pandas as pd
 from sqlalchemy import text
@@ -31,17 +32,50 @@ def upsert_circuit(conn, name: str, location: str, country: str) -> int:
     return result.scalar_one()
 
 
-def upsert_event(conn, season_id: int, round_no: int, event_name: str, circuit_id: int, event_date) -> int:
+def upsert_event(
+    conn,
+    season_id: int,
+    round_no: int,
+    event_name: str,
+    circuit_id: int | None,
+    event_date,
+    country: str | None = None,
+    location: str | None = None,
+    official_event_name: str | None = None,
+    event_format: str | None = None,
+) -> int:
+    """Insert or refresh an event while preserving fields absent from a source update."""
     result = conn.execute(
         text("""
-            INSERT INTO events (season_id, round, event_name, circuit_id, event_date)
-            VALUES (:season_id, :round, :event_name, :circuit_id, :event_date)
+            INSERT INTO events (
+                season_id, round, event_name, circuit_id, event_date,
+                country, location, official_event_name, event_format
+            )
+            VALUES (
+                :season_id, :round_no, :event_name, :circuit_id, :event_date,
+                :country, :location, :official_event_name, :event_format
+            )
             ON CONFLICT (season_id, round) DO UPDATE SET
-                event_name = EXCLUDED.event_name, circuit_id = EXCLUDED.circuit_id, event_date = EXCLUDED.event_date
+                event_name = EXCLUDED.event_name,
+                circuit_id = COALESCE(EXCLUDED.circuit_id, events.circuit_id),
+                event_date = COALESCE(EXCLUDED.event_date, events.event_date),
+                country = COALESCE(EXCLUDED.country, events.country),
+                location = COALESCE(EXCLUDED.location, events.location),
+                official_event_name = COALESCE(EXCLUDED.official_event_name, events.official_event_name),
+                event_format = COALESCE(EXCLUDED.event_format, events.event_format)
             RETURNING event_id
         """),
-        {"season_id": season_id, "round": round_no, "event_name": event_name,
-         "circuit_id": circuit_id, "event_date": event_date},
+        {
+            "season_id": season_id,
+            "round_no": round_no,
+            "event_name": event_name,
+            "circuit_id": circuit_id,
+            "event_date": event_date,
+            "country": country,
+            "location": location,
+            "official_event_name": official_event_name,
+            "event_format": event_format,
+        },
     )
     return result.scalar_one()
 
@@ -94,8 +128,13 @@ def insert_lap(conn, session_id, driver_id, lap_number, lap_time_ms, tire_compou
             ON CONFLICT (session_id, driver_id, lap_number) DO UPDATE SET
                 lap_time_ms = EXCLUDED.lap_time_ms, tire_compound = EXCLUDED.tire_compound
         """),
-        {"session_id": session_id, "driver_id": driver_id, "lap_number": lap_number,
-         "lap_time_ms": lap_time_ms, "tire_compound": tire_compound},
+        {
+            "session_id": session_id,
+            "driver_id": driver_id,
+            "lap_number": lap_number,
+            "lap_time_ms": lap_time_ms,
+            "tire_compound": tire_compound,
+        },
     )
 
 
@@ -107,8 +146,13 @@ def insert_pit_stop(conn, session_id, driver_id, stop_number, lap, duration_ms):
             ON CONFLICT (session_id, driver_id, stop_number) DO UPDATE SET
                 lap = EXCLUDED.lap, duration_ms = EXCLUDED.duration_ms
         """),
-        {"session_id": session_id, "driver_id": driver_id, "stop_number": stop_number,
-         "lap": lap, "duration_ms": duration_ms},
+        {
+            "session_id": session_id,
+            "driver_id": driver_id,
+            "stop_number": stop_number,
+            "lap": lap,
+            "duration_ms": duration_ms,
+        },
     )
 
 
@@ -120,8 +164,14 @@ def insert_stint(conn, session_id, driver_id, stint_number, compound, lap_start,
             ON CONFLICT (session_id, driver_id, stint_number) DO UPDATE SET
                 compound = EXCLUDED.compound, lap_start = EXCLUDED.lap_start, lap_end = EXCLUDED.lap_end
         """),
-        {"session_id": session_id, "driver_id": driver_id, "stint_number": stint_number,
-         "compound": compound, "lap_start": lap_start, "lap_end": lap_end},
+        {
+            "session_id": session_id,
+            "driver_id": driver_id,
+            "stint_number": stint_number,
+            "compound": compound,
+            "lap_start": lap_start,
+            "lap_end": lap_end,
+        },
     )
 
 
@@ -134,8 +184,15 @@ def insert_weather(conn, session_id, recorded_at, air_temp, track_temp, humidity
                 air_temp = EXCLUDED.air_temp, track_temp = EXCLUDED.track_temp, humidity = EXCLUDED.humidity,
                 rainfall = EXCLUDED.rainfall, wind_speed = EXCLUDED.wind_speed
         """),
-        {"session_id": session_id, "recorded_at": recorded_at, "air_temp": air_temp,
-         "track_temp": track_temp, "humidity": humidity, "rainfall": rainfall, "wind_speed": wind_speed},
+        {
+            "session_id": session_id,
+            "recorded_at": recorded_at,
+            "air_temp": air_temp,
+            "track_temp": track_temp,
+            "humidity": humidity,
+            "rainfall": rainfall,
+            "wind_speed": wind_speed,
+        },
     )
 
 
@@ -155,9 +212,11 @@ def safe_int(value):
 
 def ms_from_timedelta(td):
     """Convert a pandas Timedelta (or NaT/None) to integer milliseconds, or None.
+
     Uses integer nanosecond math (not total_seconds()*1000) to avoid floating-point
     representation error, which silently truncates the result by 1ms in ~1/116 cases.
-    This is the corrected version — see RAG project bug #9."""
+    This is the corrected version — see RAG project bug #9.
+    """
     if td is None or pd.isna(td):
         return None
     return int(td.value // 1_000_000)

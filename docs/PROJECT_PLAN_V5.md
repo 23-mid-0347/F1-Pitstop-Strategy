@@ -1,6 +1,6 @@
 # F1 Pit Stop Strategy Optimizer — Project Plan V5
 
-**Handoff date:** 2026-10-27  
+**Handoff date:** 2026-11-01  
 **Repository:** https://github.com/23-mid-0347/F1-Pitstop-Strategy  
 **Default branch:** main  
 **Purpose:** Current source-of-truth handoff for continuing work in a new chat. It consolidates the original v4 plan, technical decisions, repository updates, local Mac setup, database state, and the end-to-end checklist.
@@ -42,8 +42,9 @@ Core files currently present:
 - backend/database/init_db.py
 - backend/database/check_connection.py
 - backend/ingestion/utils.py
+- backend/ingestion/fetch_schedule.py (initial loader on `feat/schedule-ingestion`; pending local run)
 - README.md, requirements.txt, requirements-dev.txt, pyproject.toml
-- tests/test_database_config.py
+- tests/test_database_config.py, tests/test_schedule_ingestion.py
 - docs/BUILD_CHECKLIST.md
 
 Code-level facts observed from the repository:
@@ -55,16 +56,17 @@ Code-level facts observed from the repository:
 
 ## 3. Local environment and database handoff
 
-From the current conversation:
-- macOS; Python 3.14.5 confirmed.
-- Root .venv was created and pip was upgraded to 26.2.2.
-- Installing requirements started but was cancelled with Ctrl+C. Installation is not confirmed complete. Pip showed cache deserialization warnings; retry without using cache.
-- PostgreSQL responds on localhost:5432. The command psql -h localhost -p 5432 -d postgres -c "\\l" succeeded.
-- Existing f1_analytics database is owned by role shyamprasad. Keep it separate and do not use it for this project.
-- The first database listing did not show f1_pitstop_optimizer. The user later reported creating that database, but no post-creation database list or successful connection output was supplied.
-- A prior database connection check failed before the user reported creating the database. Re-run it now.
-- Schema initialization has not been confirmed.
+As of 2026-11-01, the user verified the following locally on macOS:
+- Active virtual environment uses Python 3.14.5.
+- `python -m pip install --no-cache-dir -r requirements-dev.txt` completed with the dependencies already satisfied.
+- `python -m pytest -q` passed: **3 passed in 0.23s**.
+- `psql` connected as role `shyamprasad` to `f1_pitstop_optimizer`.
+- `python -m database.check_connection` returned `Database connection OK`.
+- `python -m database.init_db` initialized 18 SQL statements.
+- `psql ... -c "\\dt"` showed all 11 expected tables.
 
+Milestone 0's local verification is therefore complete for the reported environment. The initial schedule-loader changes are in branch `feat/schedule-ingestion`; they have not yet been tested on the user's Mac or merged to `main`.
+  
 ### Local .env settings
 
 Expected values (local only; do not commit credentials):
@@ -110,7 +112,7 @@ Do not start ingestion until package installation/tests pass, DB connection work
 | constructors | Team/constructor name and nationality |
 | circuits | Circuit name, location, country |
 | seasons | Unique season year |
-| events | Season, round, event name, circuit, date |
+| events | Season, round, event name, optional circuit link, date, country, location, official event name, event format |
 | sessions | Event, session type, session date |
 | lap_times | Session/driver/lap, lap time in milliseconds, tyre compound |
 | pit_stops | Session/driver/stop number, lap, duration in milliseconds |
@@ -194,17 +196,18 @@ Checkboxes distinguish code already committed from local checks still pending. C
 - [x] Add package markers and standard run commands.
 - [x] Add README, pytest configuration and configuration tests.
 - [x] Add live DB connection check and repository checklist.
-- [ ] Finish dependency installation (previous attempt was cancelled).
-- [ ] Run python -m pytest -q.
-- [ ] Verify f1_pitstop_optimizer exists and .env settings work.
-- [ ] Run python -m database.check_connection successfully.
-- [ ] Run python -m database.init_db successfully.
-- [ ] Verify all eleven tables using psql and \\dt.
+- [x] Finish/verify dependency installation (reported satisfied in the local environment).
+- [x] Run python -m pytest -q (3 passed in 0.23s).
+- [x] Verify f1_pitstop_optimizer exists and the configured role can connect.
+- [x] Run python -m database.check_connection successfully.
+- [x] Run python -m database.init_db successfully.
+- [x] Verify all eleven tables using psql and \\dt.
 
 **Exit:** install, tests, DB connection, schema initialization and table listing all pass locally.
 
 ### Milestone 1 — one-season ingestion
-- [ ] Implement schedule/event/session ingestion first.
+- [x] Add the initial schedule/event/session loader and mocked unit tests on branch `feat/schedule-ingestion`.
+- [ ] On the user's Mac, run tests and a 2023 dry-run, initialize the new schedule metadata columns, ingest the 2023 schedule twice, and verify no duplicate events/sessions.
 - [ ] Add lap ingestion with units, missing values and source IDs.
 - [ ] Add stint/compound and tyre-age provenance.
 - [ ] Add pit stops, weather and track-status periods (SC/VSC/red flag).
@@ -276,15 +279,30 @@ Checkboxes distinguish code already committed from local checks still pending. C
 
 ## 8. Exact immediate next step
 
-1. Complete install: python -m pip install --no-cache-dir -r requirements-dev.txt
-2. Run tests: python -m pytest -q
-3. Verify project DB access with the psql command in Section 3.
-4. From backend/, run python -m database.check_connection and python -m database.init_db.
-5. Confirm the eleven tables with psql and \\dt.
-6. Share errors with secrets redacted; troubleshoot based on output.
-7. Only after Milestone 0 passes, begin Milestone 1 with schedule/event/session ingestion.
+Milestone 0 has been verified locally (Python 3.14.5, dependencies available, 3 tests passing, PostgreSQL connection OK, schema initialized, and all 11 expected tables present).
 
-Do not start modelling before ingestion and data quality are reliable.
+The next implementation is on branch `feat/schedule-ingestion`. From the repository root, fetch and check out that branch:
+
+    git fetch origin feat/schedule-ingestion
+    git switch -c feat/schedule-ingestion --track origin/feat/schedule-ingestion
+
+Then run:
+
+    python -m pytest -q
+    python -m backend.ingestion.fetch_schedule 2023 --dry-run
+
+If both pass, update the local database with the new event metadata columns by running the initializer from `backend/`:
+
+    cd backend
+    python -m database.init_db
+    cd ..
+
+Then ingest 2023 and repeat the ingestion:
+
+    python -m backend.ingestion.fetch_schedule 2023
+    python -m backend.ingestion.fetch_schedule 2023
+
+Compare row counts in `seasons`, `events`, and `sessions` before and after the second run. They should not increase on the repeated load. Do not proceed to lap telemetry until the schedule load and idempotency checks pass. Keep any credentials private.
 
 ## 9. Research positioning
 

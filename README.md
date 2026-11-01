@@ -47,7 +47,7 @@ This command requires your local PostgreSQL role to have permission to create da
 
 ## Verify the database and create the schema
 
-The application modules are run from the `backend` directory so `database` is a top-level Python package for these commands:
+The database setup modules are currently run from the `backend` directory so `database` is a top-level Python package for these commands:
 
 ```bash
 cd backend
@@ -56,9 +56,9 @@ python -m database.init_db
 cd ..
 ```
 
-The connection check executes `SELECT 1`; it does not create or modify tables. The initialization command executes the DDL in `backend/database/schema.sql`. The schema statements are designed to be safe to run again with `CREATE TABLE IF NOT EXISTS` / `CREATE INDEX IF NOT EXISTS`.
+The connection check executes `SELECT 1`; it does not create or modify tables. The initialization command executes the DDL in `backend/database/schema.sql`. The schema statements use `CREATE TABLE IF NOT EXISTS` / `CREATE INDEX IF NOT EXISTS`; schedule metadata columns are added with `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`, so the initializer also upgrades an existing database safely.
 
-## Run automated configuration tests
+## Run automated tests
 
 From the repository root, with the virtual environment active:
 
@@ -66,7 +66,27 @@ From the repository root, with the virtual environment active:
 python -m pytest -q
 ```
 
-These smoke tests validate required environment settings and safe PostgreSQL URL construction without requiring a live database. The connection command above is the separate live-database check.
+Tests validate database configuration and the schedule-ingestion normalization/upsert flow without requiring a live database or live FastF1 download.
+
+## Ingest one season's schedule
+
+Start with 2023 as the single-season smoke test. Run both commands from the repository root:
+
+```bash
+# Fetch and validate the schedule without writing to PostgreSQL
+python -m backend.ingestion.fetch_schedule 2023 --dry-run
+
+# Upsert the season, event metadata, and scheduled sessions
+python -m backend.ingestion.fetch_schedule 2023
+```
+
+The loader uses FastF1's `get_event_schedule(year, include_testing=False)`. It records each championship event and its named sessions, and stores the schedule's country, location, official event name, and event format on the event row. It prefers `SessionNDateUtc` when storing session dates.
+
+The schedule's `Location` value is a city/region, not a guaranteed official circuit name. The loader therefore leaves `events.circuit_id` unset rather than inventing a circuit identity. Circuit enrichment will be implemented from a reliable source in a later ingestion step.
+
+The loader uses database upserts keyed by the current unique constraints, so repeating the same season load should update records rather than duplicate events or sessions. The dry run validates and prints the fetched schedule without connecting to PostgreSQL.
+
+FastF1's cache is stored under `backend/cache/`; cache files should not be committed.
 
 ## Repository layout
 
@@ -79,11 +99,14 @@ These smoke tests validate required environment settings and safe PostgreSQL URL
 │   │   ├── check_connection.py
 │   │   └── schema.sql
 │   └── ingestion/
+│       ├── fetch_schedule.py
 │       └── utils.py
 ├── docs/
-│   └── BUILD_CHECKLIST.md
+│   ├── BUILD_CHECKLIST.md
+│   └── PROJECT_PLAN_V5.md
 ├── tests/
-│   └── test_database_config.py
+│   ├── test_database_config.py
+│   └── test_schedule_ingestion.py
 ├── .env.example
 ├── .gitignore
 ├── .python-version
@@ -92,9 +115,7 @@ These smoke tests validate required environment settings and safe PostgreSQL URL
 └── requirements-dev.txt
 ```
 
-## Milestones
-
-See [docs/BUILD_CHECKLIST.md](docs/BUILD_CHECKLIST.md) for the agreed design decisions, milestones, exit conditions, and validation plan.
+See [docs/BUILD_CHECKLIST.md](docs/BUILD_CHECKLIST.md) for the milestone definitions, design decisions, and exit conditions.
 
 ## Data source note
 
