@@ -79,7 +79,7 @@ Keep the degradation model, simulator, and optimizer as separate modules with ex
 - [x] Ingest all 22 2023 Race sessions from OpenF1: 24,479 lap rows processed.
 - [x] Validate all race groups in PostgreSQL: `lap_rows` matched `unique_laps` in all 22 races; there are 118 missing lap times and 92 each with missing compound, tyre age, and stint number.
 - [x] Capture compound, stint number, and derived tyre age in lap-level data where OpenF1 provides them.
-- [x] Add OpenF1 pit-lane ingestion with dry-run support, mocked tests, and documented duration semantics; local tests and live dry-run are pending.
+- [x] Add Jolpica historical pit-stop ingestion with dry-run support, mocked tests, and documented source-duration semantics; local tests and live dry-run are pending.
 - [ ] Ingest the 2023 pit-stop records and verify driver foreign keys, missing values, row counts, and repeat-run idempotency.
 - [ ] Implement weather ingestion.
 - [ ] Implement track-status-to-lap mapping for SC/VSC/red-flag periods, including a documented mid-lap policy.
@@ -163,18 +163,21 @@ Keep the degradation model, simulator, and optimizer as separate modules with ex
 
 ## Immediate next task
 
-The user has locally verified the schedule and full 2023 race-lap ingestion. The lap loader processed 24,479 rows across 22 races, and the season-wide validation query reported equal `lap_rows` and `unique_laps` for every round. The user has also verified Bahrain re-run idempotency. Missing source values remain nullable: 118 lap times and 92 each for compound, tyre age and stint number.
+The user has locally verified the schedule and full 2023 race-lap ingestion. The lap loader processed 24,479 rows across 22 races, and the season-wide validation query reported equal `lap_rows` and `unique_laps` for every round. Bahrain re-run idempotency is verified. Missing source values remain nullable: 118 lap times and 92 each for compound, tyre age and stint number.
 
-A new OpenF1-based pit-stop loader has been added on `feat/race-lap-ingestion`. It uses `lane_duration` (or legacy `pit_duration`) to populate `pit_stops.duration_ms`; this is pit-lane time, not incremental time lost versus racing. The new loader and tests have not yet been run locally.
+The first pit-stop loader attempt used OpenF1's `/pit` endpoint, but the live API returned HTTP 404 for both the Bahrain session key (7953) and meeting key (1141). The pit-stop loader has therefore been switched to Jolpica's Ergast-compatible historical `pitstops` and `results` endpoints, which return the race's stop records and provide driver-ID-to-code mappings. This source switch and the new tests have **not yet been run locally**.
+
+The pit-stop duration is preserved from the historical source and converted to milliseconds. It must not be treated as incremental pit loss versus green-flag racing pace; source durations may include entry/exit and, in unusual circumstances, red-flag delay.
 
 Next, on the user's Mac:
 1. Pull the latest `feat/race-lap-ingestion` branch.
 2. Run `python -m pytest -q` and share any failure output.
-3. Run `python -m backend.ingestion.fetch_pit_stops 2023 --round 1 --dry-run`.
-4. If the dry-run output looks reasonable, ingest Bahrain with the same command without `--dry-run`.
-5. Verify pit-stop counts, missing values, driver foreign keys, and repeat-run idempotency before running pit-stop ingestion for the full season.
+3. Run `cd backend && python -m database.init_db && cd ..` to verify the updated schema comment.
+4. Run `python -m backend.ingestion.fetch_pit_stops 2023 --round 1 --dry-run`.
+5. If the dry-run matches a credible Bahrain pit-stop list, ingest the round without `--dry-run`, query the row count and foreign-key mappings, and repeat once to verify idempotency.
+6. Only then consider the full 2023 pit-stop ingestion.
 
-Do not merge the pull request until the pit-stop loader has passed local tests, a live one-round dry-run, and a one-round idempotency check. The OpenF1 endpoint has a free-tier request limit, and the loader spaces API requests.
+Do not merge the pull request until the pit-stop loader has passed local tests, a live one-round dry-run, one-round write verification and idempotency. The Jolpica client spaces API requests conservatively.
 
 ## Research notes
 
