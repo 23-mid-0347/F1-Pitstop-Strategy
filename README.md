@@ -163,6 +163,28 @@ The loader matches each stored Grand Prix Race session to OpenF1's `/sessions` a
 
 The weather loader's first implementation and mocked tests are on `feat/race-lap-ingestion`; local tests and a live Bahrain dry-run must pass before database writes. See the [OpenF1 API documentation](https://openf1.org/docs/).
 
+## Ingest Safety Car, VSC, and red-flag periods
+
+The race-control loader reads OpenF1 race-control messages and lap start timestamps, then pairs Safety Car/VSC deployment and ending messages and red-flag/restart messages into inclusive lap intervals in `safety_car_periods`.
+
+Start with a Bahrain dry run:
+
+```bash
+python -m backend.ingestion.fetch_race_control 2023 --round 1 --dry-run
+```
+
+Only after local unit tests pass and OpenF1 access is available, review the period count, timestamp-to-lap mapping counts, unmatched endings, and inferred closures before any write:
+
+```bash
+python -m backend.ingestion.fetch_race_control 2023 --round 1
+```
+
+The mapping policy is explicit. If a race-control record has a valid `lap_number`, that value takes precedence. Otherwise, the event timestamp is assigned to the nearest median `date_start` for each lap across drivers. A timestamp exactly halfway between adjacent median lap starts maps to the earlier lap. OpenF1 documents lap start timestamps as approximate, so fallback mappings are estimates and are counted. Periods still open at the observed race horizon are closed there with `end_inferred=true`; transitions that supersede an active period also use an inferred end. The schema retains source timestamps, mapping method, and the inferred-end flag for auditing.
+
+Red flags are represented separately as `RedFlag` periods, but this is an initial message-pairing approximation, not a complete FIA restart emulator. Validate representative races and document the limitations before using these periods in strategy evaluation. Empty race-control or lap responses are treated as source failures. The public OpenF1 API can temporarily return HTTP 401 for historical data during a live F1 session, in which case live dry-run validation must be deferred until access is restored.
+
+See the [OpenF1 API documentation](https://openf1.org/docs/) for race-control fields.
+
 ## Repository layout
 
 ```text
@@ -178,6 +200,7 @@ The weather loader's first implementation and mocked tests are on `feat/race-lap
 │       ├── fetch_race_laps.py
 │       ├── fetch_pit_stops.py
 │       ├── fetch_weather.py
+│       ├── fetch_race_control.py
 │       └── utils.py
 ├── docs/
 │   ├── BUILD_CHECKLIST.md
@@ -187,7 +210,8 @@ The weather loader's first implementation and mocked tests are on `feat/race-lap
 │   ├── test_schedule_ingestion.py
 │   ├── test_race_lap_ingestion.py
 │   ├── test_pit_stop_ingestion.py
-│   └── test_weather_ingestion.py
+│   ├── test_weather_ingestion.py
+│   └── test_race_control_ingestion.py
 ├── .env.example
 ├── .gitignore
 ├── .python-version
