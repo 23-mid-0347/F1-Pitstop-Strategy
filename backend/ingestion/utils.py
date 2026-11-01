@@ -9,7 +9,7 @@ CACHE_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file_
 
 def setup_fastf1_cache():
     os.makedirs(CACHE_DIR, exist_ok=True)
-    fastf1.Cache.enable_cache(CACHE_DIR)
+    fastf1.Cache.configure(cache_dir=CACHE_DIR)
 
 
 def upsert_season(conn, year: int) -> int:
@@ -107,7 +107,7 @@ def get_event_id(conn, season_id: int, round_no: int):
     return row[0] if row else None
 
 
-def upsert_driver(conn, code: str, full_name: str, nationality: str) -> int:
+def upsert_driver(conn, code: str, full_name: str, nationality: str | None) -> int:
     result = conn.execute(
         text("""
             INSERT INTO drivers (driver_code, full_name, nationality) VALUES (:code, :full_name, :nationality)
@@ -120,13 +120,56 @@ def upsert_driver(conn, code: str, full_name: str, nationality: str) -> int:
     return result.scalar_one()
 
 
-def insert_lap(conn, session_id, driver_id, lap_number, lap_time_ms, tire_compound):
+def insert_lap(
+    conn,
+    session_id,
+    driver_id,
+    lap_number,
+    lap_time_ms,
+    tire_compound,
+    stint_number=None,
+    tyre_age=None,
+    fresh_tyre=None,
+    pit_in_lap=None,
+    pit_out_lap=None,
+    track_status=None,
+    is_accurate=None,
+    is_deleted=None,
+    deleted_reason=None,
+    fastf1_generated=None,
+    lap_start_time_ms=None,
+    lap_end_time_ms=None,
+):
+    """Insert or refresh one raw lap and its source quality/context fields."""
     conn.execute(
         text("""
-            INSERT INTO lap_times (session_id, driver_id, lap_number, lap_time_ms, tire_compound)
-            VALUES (:session_id, :driver_id, :lap_number, :lap_time_ms, :tire_compound)
+            INSERT INTO lap_times (
+                session_id, driver_id, lap_number, lap_time_ms, tire_compound,
+                stint_number, tyre_age, fresh_tyre, pit_in_lap, pit_out_lap,
+                track_status, is_accurate, is_deleted, deleted_reason,
+                fastf1_generated, lap_start_time_ms, lap_end_time_ms
+            )
+            VALUES (
+                :session_id, :driver_id, :lap_number, :lap_time_ms, :tire_compound,
+                :stint_number, :tyre_age, :fresh_tyre, :pit_in_lap, :pit_out_lap,
+                :track_status, :is_accurate, :is_deleted, :deleted_reason,
+                :fastf1_generated, :lap_start_time_ms, :lap_end_time_ms
+            )
             ON CONFLICT (session_id, driver_id, lap_number) DO UPDATE SET
-                lap_time_ms = EXCLUDED.lap_time_ms, tire_compound = EXCLUDED.tire_compound
+                lap_time_ms = EXCLUDED.lap_time_ms,
+                tire_compound = EXCLUDED.tire_compound,
+                stint_number = EXCLUDED.stint_number,
+                tyre_age = EXCLUDED.tyre_age,
+                fresh_tyre = EXCLUDED.fresh_tyre,
+                pit_in_lap = EXCLUDED.pit_in_lap,
+                pit_out_lap = EXCLUDED.pit_out_lap,
+                track_status = EXCLUDED.track_status,
+                is_accurate = EXCLUDED.is_accurate,
+                is_deleted = EXCLUDED.is_deleted,
+                deleted_reason = EXCLUDED.deleted_reason,
+                fastf1_generated = EXCLUDED.fastf1_generated,
+                lap_start_time_ms = EXCLUDED.lap_start_time_ms,
+                lap_end_time_ms = EXCLUDED.lap_end_time_ms
         """),
         {
             "session_id": session_id,
@@ -134,6 +177,18 @@ def insert_lap(conn, session_id, driver_id, lap_number, lap_time_ms, tire_compou
             "lap_number": lap_number,
             "lap_time_ms": lap_time_ms,
             "tire_compound": tire_compound,
+            "stint_number": stint_number,
+            "tyre_age": tyre_age,
+            "fresh_tyre": fresh_tyre,
+            "pit_in_lap": pit_in_lap,
+            "pit_out_lap": pit_out_lap,
+            "track_status": track_status,
+            "is_accurate": is_accurate,
+            "is_deleted": is_deleted,
+            "deleted_reason": deleted_reason,
+            "fastf1_generated": fastf1_generated,
+            "lap_start_time_ms": lap_start_time_ms,
+            "lap_end_time_ms": lap_end_time_ms,
         },
     )
 
