@@ -1,8 +1,9 @@
-"""Ingest Grand Prix pit-lane visits from OpenF1's free historical API.
+"""Ingest historical Grand Prix pit-stop records from Jolpica's free API.
 
-The database's duration_ms field stores the source's time in the pit lane
-(lane_duration, or legacy pit_duration), not incremental time lost versus
-normal racing pace. Keep that distinction explicit for the strategy model.
+The loader uses Jolpica's Ergast-compatible historical pitstops and results
+endpoints. Source duration is stored as reported in milliseconds. It is the
+historical pit-stop duration (which may include pit entry/exit and, in unusual
+cases, red-flag delay), not incremental time lost versus normal racing pace.
 
 Run from the repository root:
     python -m backend.ingestion.fetch_pit_stops 2023 --round 1 --dry-run
@@ -12,32 +13,112 @@ Run from the repository root:
 from __future__ import annotations
 
 import argparse
+import json
 import math
+import time
 from typing import Any
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlencode
+from urllib.request import Request, urlopen
 
 from ..database.connection import get_engine
-from .fetch_race_laps import (
-    _clean_text,
-    _get_openf1_json,
-    _optional_float,
-    _positive_int,
-    fetch_openf1_race_sessions,
-    get_scheduled_race_sessions,
-    match_openf1_race_session,
-)
+from .fetch_race_laps import _clean_text, _positive_int
 from .utils import insert_pit_stop, upsert_driver
+
+JOLPICA_API_BASE = "https://api.jolpi.ca/ergast/f1"
+REQUEST_INTERVAL_SECONDS = 2.1
+REQUEST_TIMEOUT_SECONDS = 30
+_last_request_monotonic = 0.0
+
+
+def _get_jolpica_json(path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Fetch a JSON response from Jolpica with conservative request pacing."""
+    global _last_request_monotonic
+
+    elapsed = time.monotonic() - _last_request_monotonic
+    if _last_request_monotonic and elapsed < REQUEST_INTERVAL_SECONDS:
+        time.sleep(REQUEST_INTERVAL_SECONDS - elapsed)
+
+    query = urlencode(params or {})
+    url = f"{JOLPICA_API_BASE}/{path.lstrip('/').rstrip('/')}.json"
+    if query:
+        url = f"{url}?{query}"
+    request = Request(
+        url,
+        headers={"User-Agent": "F1-Pitstop-Strategy-Optimizer/0.1"},
+    )
+    try:
+        with urlopen(request, timeout=REQUEST_TIMEOUT_SECONDS) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except HTTPError as exc:
+        raise RuntimeError(
+            f"Jolpica endpoint /{path} returned HTTP {exc.code}."
+        ) from exc
+    except (URLError, TimeoutError) as exc:
+        raise RuntimeError(f"Could not reach Jolpica endpoint /{path}: {exc}") from exc
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"Jolpica endpoint /{path} returned invalid JSON.") from exc
+
+    _last_request_monotonic = time.monotonic()
+    if not isinstance(payload, dict):
+        raise RuntimeError(f"Jolpica endpoint /{path} returned an unexpected response.")
+    return payload
+
+
+def _jolpica_race_payload(payload: dict[str, Any], endpoint: str) -> dict[str, Any]:
+    """Extract exactly one race from an Ergast-compatible response."""
+    races = (
+        payload.get("MRData", {})
+        .get("RaceTable", {})
+        .get("Races", [])
+    )
+    if len(races) != 1:
+        raise RuntimeError(
+            f"Jolpica endpoint /{endpoint} returned {len(races)} race records; "
+            "expected exactly one."
+        )
+    return races[0]
+
+
+def _duration_seconds(value: Any) -> float | None:
+    """Parse seconds such as '25.885' or a minutes:seconds duration such as '40:55.302'."""
+    if value is None:
+        return None
+    value_text = str(value).strip()
+    if not value_text:
+        return None
+
+    try:
+        if ":" not in value_text:
+            seconds = float(value_text)
+        else:
+            parts = value_text.split(":")
+            if len(parts) == 2:
+                minutes = int(parts[0])
+                seconds = minutes * 60 + float(parts[1])
+            elif len(parts) == 3:
+                hours = int(parts[0])
+                minutes = int(parts[1])
+                seconds = hours * 3600 + minutes * 60 + float(parts[2])
+            else:
+                return None
+    except (TypeError, ValueError, OverflowError):
+        return None
+
+    if not math.isfinite(seconds) or seconds < 0:
+        return None
+    return seconds
 
 
 def normalize_pit_stops(
     pit_rows: list[dict[str, Any]],
     driver_rows: list[dict[str, Any]],
 ) -> tuple[list[dict[str, Any]], dict[str, int]]:
-    """Normalize source pit visits and assign stable per-driver stop numbers.
+    """Normalize historical pit stops and preserve source stop numbers when available.
 
-    Stop numbers are assigned in chronological order per driver, with lap
-    number and original row order as deterministic fallbacks when dates are
-    absent. A record lacking a duration or lap number is retained as nullable
-    data; records without a driver identity cannot be assigned a foreign key.
+    A pit stop lacking a duration or lap number remains in the normalized output
+    with a NULL field and is counted. Rows lacking a usable driver mapping are
+    skipped because they cannot be assigned the database foreign key.
     """
     drivers_by_number = {
         str(driver.get("driver_number")): driver
@@ -68,26 +149,30 @@ def normalize_pit_stops(
         duration_source = pit.get("lane_duration")
         if duration_source is None:
             duration_source = pit.get("pit_duration")
-        duration_seconds = _optional_float(duration_source)
+        if duration_source is None:
+            duration_source = pit.get("duration")
+        duration_seconds = _duration_seconds(duration_source)
         duration_ms = None
-        if duration_seconds is not None and duration_seconds >= 0 and math.isfinite(duration_seconds):
+        if duration_seconds is not None:
             duration_ms = int(round(duration_seconds * 1000))
         if duration_ms is None:
             stats["missing_duration_rows"] += 1
 
+        source_stop_number = _positive_int(pit.get("stop"))
         source_date = _clean_text(pit.get("date"))
+        if source_date is None:
+            source_date = _clean_text(pit.get("time"))
         records.append({
             "driver_code": driver_code,
             "full_name": _clean_text(driver.get("full_name")) or driver_code,
             "nationality": _clean_text(driver.get("country_code")),
             "lap_number": lap_number,
             "duration_ms": duration_ms,
+            "source_stop_number": source_stop_number,
             "source_date": source_date,
             "_original_index": original_index,
         })
 
-    # ISO timestamps sort chronologically as strings. If timestamps are absent,
-    # use lap number, then source order, to keep stop numbering deterministic.
     records.sort(
         key=lambda record: (
             record["driver_code"],
@@ -98,10 +183,18 @@ def normalize_pit_stops(
         )
     )
     stop_numbers: dict[str, int] = {}
+    seen_identities: set[tuple[str, int]] = set()
     for record in records:
         code = record["driver_code"]
         stop_numbers[code] = stop_numbers.get(code, 0) + 1
-        record["stop_number"] = stop_numbers[code]
+        stop_number = record.pop("source_stop_number") or stop_numbers[code]
+        identity = (code, stop_number)
+        if identity in seen_identities:
+            raise ValueError(
+                f"Duplicate pit-stop identity in source: driver {code}, stop {stop_number}."
+            )
+        seen_identities.add(identity)
+        record["stop_number"] = stop_number
         record.pop("_original_index", None)
         record.pop("source_date", None)
 
@@ -109,44 +202,63 @@ def normalize_pit_stops(
     return records, stats
 
 
-def fetch_openf1_pit_stops(
-    session_key: int | str,
-    meeting_key: int | str | None = None,
-) -> list[dict[str, Any]]:
-    """Fetch pit visits by race session, with a meeting-level fallback for 404s.
+def fetch_jolpica_pit_stops(
+    year: int,
+    round_number: int,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Fetch pit-stop records and corresponding driver identities for one race."""
+    pit_payload = _get_jolpica_json(
+        f"{year}/{round_number}/pitstops",
+        {"limit": 100},
+    )
+    results_payload = _get_jolpica_json(
+        f"{year}/{round_number}/results",
+        {"limit": 100},
+    )
 
-    Some OpenF1 historical queries can return 404 when a session-specific pit
-    partition has no direct result. When a meeting key is available, retry at
-    meeting scope and then filter strictly back to the intended Race session
-    using each row's session_key. Never ingest practice or sprint pit visits.
-    """
-    try:
-        return _get_openf1_json("pit", {"session_key": session_key})
-    except RuntimeError as exc:
-        if "returned HTTP 404" not in str(exc) or meeting_key is None:
-            raise
+    pit_race = _jolpica_race_payload(
+        pit_payload, f"{year}/{round_number}/pitstops"
+    )
+    results_race = _jolpica_race_payload(
+        results_payload, f"{year}/{round_number}/results"
+    )
 
-    meeting_rows = _get_openf1_json("pit", {"meeting_key": meeting_key})
-    session_rows = [
-        row for row in meeting_rows
-        if str(row.get("session_key")) == str(session_key)
+    pit_rows = [
+        {
+            "driver_number": pit.get("driverId"),
+            "lap_number": pit.get("lap"),
+            "stop": pit.get("stop"),
+            "time": pit.get("time"),
+            "duration": pit.get("duration"),
+        }
+        for pit in pit_race.get("PitStops", [])
     ]
-    if not session_rows:
+    driver_rows = []
+    for result in results_race.get("Results", []):
+        driver = result.get("Driver", {})
+        driver_id = _clean_text(driver.get("driverId"))
+        if not driver_id:
+            continue
+        given_name = _clean_text(driver.get("givenName")) or ""
+        family_name = _clean_text(driver.get("familyName")) or ""
+        driver_rows.append({
+            "driver_number": driver_id,
+            "name_acronym": _clean_text(driver.get("code")),
+            "full_name": " ".join(part for part in (given_name, family_name) if part).strip(),
+            "country_code": _clean_text(driver.get("nationality")),
+        })
+
+    if not pit_rows:
+        race_name = pit_race.get("raceName") or f"{year} round {round_number}"
         raise RuntimeError(
-            "OpenF1 returned HTTP 404 for the session-level /pit query and the "
-            f"meeting-level fallback contained no pit rows for session_key={session_key} "
-            f"(meeting_key={meeting_key})."
+            f"Jolpica returned no pit-stop records for {race_name}. "
+            "Refusing to treat missing source data as a successfully ingested race."
         )
-    return session_rows
-
-
-def fetch_openf1_drivers(session_key: int | str) -> list[dict[str, Any]]:
-    """Fetch driver number-to-code/name mappings for one OpenF1 session."""
-    return _get_openf1_json("drivers", {"session_key": session_key})
+    return pit_rows, driver_rows
 
 
 def _persist_pit_stops(engine, session_id: int, records: list[dict[str, Any]]) -> None:
-    """Upsert all pit-lane visits for one race session in one transaction."""
+    """Upsert all pit-stop visits for one race session in one transaction."""
     with engine.begin() as connection:
         driver_ids: dict[str, int] = {}
         for record in records:
@@ -174,9 +286,9 @@ def ingest_pit_stops(
     round_number: int | None = None,
     dry_run: bool = False,
 ) -> dict[str, int]:
-    """Ingest pit-lane visits for one Grand Prix round or all scheduled races."""
-    if year < 2023:
-        raise ValueError("OpenF1's free historical dataset starts in 2023.")
+    """Ingest pit-stop data for one Grand Prix round or all scheduled races."""
+    if year < 2011:
+        raise ValueError("Jolpica pit-stop history starts in 2011.")
     if round_number is not None and round_number < 1:
         raise ValueError("Round number must be a positive integer.")
 
@@ -191,33 +303,25 @@ def ingest_pit_stops(
     }
     try:
         scheduled_sessions = get_scheduled_race_sessions(engine, year, round_number)
-        openf1_sessions = fetch_openf1_race_sessions(year)
         print(f"Season {year}: {len(scheduled_sessions)} Race session(s) queued.")
         for scheduled in scheduled_sessions:
             round_no = int(scheduled["round_number"])
             event_name = str(scheduled["event_name"])
             session_id = int(scheduled["session_id"])
-            print(f"Loading R{round_no:02d}: {event_name} pit stops from OpenF1 ...")
+            print(f"Loading R{round_no:02d}: {event_name} pit stops from Jolpica ...")
 
             try:
-                source_session = match_openf1_race_session(event_name, openf1_sessions)
-                session_key = source_session.get("session_key")
-                if session_key is None:
-                    raise ValueError("matched OpenF1 session has no session_key")
-
-                pit_rows = fetch_openf1_pit_stops(
-                    session_key,
-                    meeting_key=source_session.get("meeting_key"),
-                )
-                driver_rows = fetch_openf1_drivers(session_key)
+                pit_rows, driver_rows = fetch_jolpica_pit_stops(year, round_no)
                 records, stats = normalize_pit_stops(pit_rows, driver_rows)
                 print(
-                    f"  Source pit visits: {stats['source_rows']}; "
-                    f"upsertable visits: {stats['normalized_rows']}; "
+                    f"  Source pit stops: {stats['source_rows']}; "
+                    f"upsertable stops: {stats['normalized_rows']}; "
                     f"missing lap numbers preserved: {stats['missing_lap_number_rows']}; "
-                    f"missing pit-lane durations preserved: {stats['missing_duration_rows']}; "
+                    f"missing pit durations preserved: {stats['missing_duration_rows']}; "
                     f"excluded unknown driver mappings: {stats['excluded_missing_driver_code']}."
                 )
+                if not records:
+                    raise ValueError("No pit stops with usable driver identities remained after normalization.")
                 if not dry_run:
                     _persist_pit_stops(engine, session_id, records)
 
@@ -241,15 +345,15 @@ def ingest_pit_stops(
     action = "validated only; no pit-stop rows written" if dry_run else "upsert complete"
     print(
         f"Season {year} pit-stop ingestion {action}. "
-        f"Sessions: {summary['sessions']}; source visits: {summary['source_rows']}; "
-        f"upsertable visits: {summary['normalized_rows']}."
+        f"Sessions: {summary['sessions']}; source stops: {summary['source_rows']}; "
+        f"upsertable stops: {summary['normalized_rows']}."
     )
     return summary
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Ingest OpenF1 Grand Prix pit-lane visits.")
-    parser.add_argument("year", type=int, help="Season year, 2023 or later")
+    parser = argparse.ArgumentParser(description="Ingest Jolpica historical Grand Prix pit stops.")
+    parser.add_argument("year", type=int, help="Season year, 2011 or later")
     parser.add_argument(
         "--round",
         dest="round_number",
@@ -259,7 +363,7 @@ def main() -> None:
     parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="Fetch and validate pit visits without writing driver or pit-stop rows.",
+        help="Fetch and validate pit stops without writing driver or pit-stop rows.",
     )
     args = parser.parse_args()
 
