@@ -30,7 +30,7 @@ This is a repository-source review, not a claim that the local database or end-t
 
 ## Architecture recommendation
 
-FastF1 -> ingestion and quality checks -> PostgreSQL -> modelling dataset -> tyre model -> stochastic race simulator -> strategy optimizer -> FastAPI -> React interface -> backtest/evaluation.
+FastF1 schedule + OpenF1 historical race data -> ingestion and quality checks -> PostgreSQL -> modelling dataset -> tyre model -> stochastic race simulator -> strategy optimizer -> FastAPI -> React interface -> backtest/evaluation.
 
 Keep the degradation model, simulator, and optimizer as separate modules with explicit inputs and outputs. This helps unit testing and makes recommendations explainable.
 
@@ -51,7 +51,7 @@ Keep the degradation model, simulator, and optimizer as separate modules with ex
 13. **API:** build/test FastAPI endpoints after core Python functions work in ordinary unit tests. Use request/response schemas, validation, typed outputs, and parameterized SQL. Avoid optional SQL parameters with ambiguous PostgreSQL types; cast optional parameters.
 14. **Reproducibility:** record data coverage, source season/session identifiers, cleaning rules, model version, simulation count, random seed, assumptions, and evaluation metrics with each run.
 15. **Scope limits:** version 1 is a single-driver strategy support model, not an official team simulator. Traffic, overtaking, multi-car undercut/overcut games, live ingestion, and full wet-weather transitions are later scope unless required.
-16. **Tyre age must be explicit:** add a per-lap tyre-age field (and preferably source stint number/fresh-tyre indicator) to `lap_times` or the clean modelling dataset. Stint start/end laps alone cannot reliably identify the age of a used tyre fitted during a race. Use FastF1's tyre-life field when available and document missing-value handling.
+16. **Tyre age must be explicit:** add a per-lap tyre-age field (and preferably source stint number/fresh-tyre indicator) to `lap_times` or the clean modelling dataset. Stint start/end laps alone cannot reliably identify the age of a used tyre fitted during a race. Use source tyre age when available; with OpenF1, derive lap-level age from the stint's tyre_age_at_start and lap offset, and document missing-value handling.
 17. **Pit loss must be calibrated correctly:** `pit_stops.duration_ms` records pit-lane entry-to-exit duration, not the extra time lost versus racing at normal pace. Do not add that raw duration directly to lap-time sums. Estimate circuit/session pit loss as incremental time relative to a green-flag reference, and model the SC/VSC reduction as a separate calibrated assumption.
 18. **Legal strategy constraints:** version 1 should expose mandatory compound/stop rules as explicit configurable constraints, using the relevant season's regulations. Never rank an infeasible strategy as optimal. Wet and red-flag cases should be flagged unsupported until their rules are implemented and tested.
 19. **V1 recommendation scope:** recommend the next pit decision from the current race state and simulate the remainder of the race under documented assumptions. Keep the number of future stops configurable but bounded; don't silently assume a strategy is legal or globally optimal if later stops are outside the search space.
@@ -74,7 +74,7 @@ Keep the degradation model, simulator, and optimizer as separate modules with ex
 - [x] Correct the init script usage comment and standardize module invocation.
 - [x] Add the initial schedule/event/session ingestion script (`backend/ingestion/fetch_schedule.py`) and mocked unit tests on branch `feat/schedule-ingestion`.
 - [x] Verify schedule ingestion locally: dry-run found 22 events and 110 sessions; full ingestion completed and a repeat run left counts at 1 season, 22 events, and 110 sessions.
-- [x] Add an initial race-lap ingestion script with mocked normalization/upsert tests on `feat/race-lap-ingestion`; local tests and a live one-round dry-run are pending.
+- [x] Add an OpenF1-based race-lap loader with mocked normalization/upsert tests on `feat/race-lap-ingestion`; local tests and a live one-round dry-run are pending.
 - [ ] Run the expanded tests, initialize the added lap metadata columns, dry-run round 1, and only then write round 1 lap data.
 - [ ] Run all 2023 Race sessions and validate row counts, nullable timing fields, tyre-age provenance, and duplicate-free re-runs.
 - [ ] Implement stint/compound ingestion with reliable tyre-age derivation.
@@ -162,7 +162,16 @@ Keep the degradation model, simulator, and optimizer as separate modules with ex
 
 ## Immediate next task
 
-Milestone 0 has been verified on the user's Mac as of 2026-11-01: dependencies are present, 3 configuration tests pass, PostgreSQL connection succeeds, schema initialization succeeds, and all 11 expected tables are present. Branch `feat/schedule-ingestion` contains the initial FastF1 schedule loader, event metadata columns, and mocked tests. After checking out that branch, run `python -m pytest -q`, run `python -m backend.ingestion.fetch_schedule 2023 --dry-run`, apply the updated schema from `backend/`, then ingest 2023 and repeat the ingestion. Confirm event/session counts are unchanged on the second run before adding lap, stint, pit-stop, weather, and track-status loaders.
+The user's local environment has already verified the 2023 FastF1 schedule ingestion: 22 events and 110 sessions, with repeat upserts not creating duplicates. FastF1's detailed-timing load then prompted for F1TV authentication, so race-lap ingestion was switched on `feat/race-lap-ingestion` to OpenF1's unauthenticated historical API (2023 onward). FastF1 remains the schedule source.
+
+Next, on the user's Mac:
+1. Pull the latest `feat/race-lap-ingestion` branch.
+2. Run `python -m pytest -q`.
+3. Re-run `cd backend && python -m database.init_db && cd ..` so the lap metadata columns are present.
+4. Run `python -m backend.ingestion.fetch_race_laps 2023 --round 1 --dry-run`.
+5. Review the output and confirm it validates Bahrain without writing lap rows. Only then run the same command without `--dry-run`, inspect row counts and tyre-age values, and verify a repeat run does not duplicate lap records.
+
+Do not merge the pull request until local tests and the one-round dry-run succeed. The OpenF1 endpoint has a free-tier request limit; the loader spaces requests and should not be run repeatedly in rapid succession.
 
 ## Research notes
 
