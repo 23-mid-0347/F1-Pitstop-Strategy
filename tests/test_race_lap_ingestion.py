@@ -1,5 +1,7 @@
 from contextlib import nullcontext
 
+from datetime import datetime
+
 import pandas as pd
 import pytest
 
@@ -59,6 +61,29 @@ def test_normalize_laps_preserves_timing_tyre_and_quality_fields():
     assert lap["fastf1_generated"] is False
     assert lap["lap_start_time_ms"] == 120000
     assert lap["lap_end_time_ms"] == 210123
+
+
+
+def test_normalize_laps_preserves_approximate_openf1_lap_timestamps():
+    row = _lap_row()
+    row["LapStartAt"] = "2023-09-16T13:59:07.606000+00:00"
+    row["LapDurationSeconds"] = 91.743
+
+    records, _ = fetch_race_laps.normalize_laps(pd.DataFrame([row]))
+
+    lap = records[0]
+    assert lap["lap_start_at"] == datetime(2023, 9, 16, 13, 59, 7, 606000)
+    assert lap["lap_end_at"] == datetime(2023, 9, 16, 14, 0, 39, 349000)
+
+
+def test_normalize_laps_leaves_lap_end_timestamp_missing_without_start_time():
+    row = _lap_row()
+    row["LapDurationSeconds"] = 91.743
+
+    records, _ = fetch_race_laps.normalize_laps(pd.DataFrame([row]))
+
+    assert records[0]["lap_start_at"] is None
+    assert records[0]["lap_end_at"] is None
 
 
 def test_normalize_laps_uses_openf1_pit_out_flag_and_driver_details():
