@@ -72,20 +72,21 @@ Keep the degradation model, simulator, and optimizer as separate modules with ex
 
 ### Milestone 1 — Database and one-season ingestion
 - [x] Correct the init script usage comment and standardize module invocation.
-- [x] Add the initial schedule/event/session ingestion script (`backend/ingestion/fetch_schedule.py`) and mocked unit tests on branch `feat/schedule-ingestion`.
-- [x] Verify schedule ingestion locally: dry-run found 22 events and 110 sessions; full ingestion completed and a repeat run left counts at 1 season, 22 events, and 110 sessions.
-- [x] Add an OpenF1-based race-lap loader with mocked normalization/upsert tests on `feat/race-lap-ingestion`; local tests and a live one-round dry-run are pending.
-- [ ] Run the expanded tests, initialize the added lap metadata columns, dry-run round 1, and only then write round 1 lap data.
-- [ ] Run all 2023 Race sessions and validate row counts, nullable timing fields, tyre-age provenance, and duplicate-free re-runs.
-- [ ] Implement stint/compound ingestion with reliable tyre-age derivation.
-- [ ] Implement pit-stop ingestion and document what duration means.
+- [x] Add the schedule/event/session ingestion script and mocked tests; locally verified 22 events and 110 sessions for 2023, with idempotent upserts.
+- [x] Add OpenF1-based race-lap ingestion and mocked tests on `feat/race-lap-ingestion`.
+- [x] Run the expanded lap-loader tests locally (22 passed before pit-stop-loader tests were added) and initialize the lap metadata schema.
+- [x] Dry-run and ingest Bahrain 2023; verify the 1,058-row upsert is idempotent (1,058 total rows and 1,058 unique identities after a repeat run).
+- [x] Ingest all 22 2023 Race sessions from OpenF1: 24,479 lap rows processed.
+- [x] Validate all race groups in PostgreSQL: `lap_rows` matched `unique_laps` in all 22 races; there are 118 missing lap times and 92 each with missing compound, tyre age, and stint number.
+- [x] Capture compound, stint number, and derived tyre age in lap-level data where OpenF1 provides them.
+- [x] Add OpenF1 pit-lane ingestion with dry-run support, mocked tests, and documented duration semantics; local tests and live dry-run are pending.
+- [ ] Ingest the 2023 pit-stop records and verify driver foreign keys, missing values, row counts, and repeat-run idempotency.
 - [ ] Implement weather ingestion.
-- [ ] Implement track-status-to-lap mapping for SC/VSC/red-flag periods, including mid-lap policy.
-- [ ] Populate and validate the separate `stints` table where useful; lap-level tyre compound, stint number, `TyreLife`, and `FreshTyre` are already captured by the initial lap loader.
-- [ ] Ensure all upserts are idempotent and update every intended field.
-- [ ] Run one complete season and verify row counts and foreign-key relationships.
+- [ ] Implement track-status-to-lap mapping for SC/VSC/red-flag periods, including a documented mid-lap policy.
+- [ ] Populate and validate the separate `stints` table if it adds reliable value beyond lap-level tyre compound, stint number, and tyre age.
+- [ ] Verify every upsert updates all intended fields and run a full-season repeat test.
 
-**Exit condition:** re-running ingestion does not duplicate rows; failed sessions are logged; source-to-database checks pass.
+**Exit condition:** schedule, lap and pit-stop ingestion are repeatable; raw values, nulls, units and failures are documented; source-to-database checks pass.
 
 ### Milestone 2 — Data quality and modelling dataset
 - [ ] Build explicit clean-lap filtering rules.
@@ -162,16 +163,18 @@ Keep the degradation model, simulator, and optimizer as separate modules with ex
 
 ## Immediate next task
 
-The user's local environment has already verified the 2023 FastF1 schedule ingestion: 22 events and 110 sessions, with repeat upserts not creating duplicates. FastF1's detailed-timing load then prompted for F1TV authentication, so race-lap ingestion was switched on `feat/race-lap-ingestion` to OpenF1's unauthenticated historical API (2023 onward). FastF1 remains the schedule source.
+The user has locally verified the schedule and full 2023 race-lap ingestion. The lap loader processed 24,479 rows across 22 races, and the season-wide validation query reported equal `lap_rows` and `unique_laps` for every round. The user has also verified Bahrain re-run idempotency. Missing source values remain nullable: 118 lap times and 92 each for compound, tyre age and stint number.
+
+A new OpenF1-based pit-stop loader has been added on `feat/race-lap-ingestion`. It uses `lane_duration` (or legacy `pit_duration`) to populate `pit_stops.duration_ms`; this is pit-lane time, not incremental time lost versus racing. The new loader and tests have not yet been run locally.
 
 Next, on the user's Mac:
 1. Pull the latest `feat/race-lap-ingestion` branch.
-2. Run `python -m pytest -q`.
-3. Re-run `cd backend && python -m database.init_db && cd ..` so the lap metadata columns are present.
-4. Run `python -m backend.ingestion.fetch_race_laps 2023 --round 1 --dry-run`.
-5. Review the output and confirm it validates Bahrain without writing lap rows. Only then run the same command without `--dry-run`, inspect row counts and tyre-age values, and verify a repeat run does not duplicate lap records.
+2. Run `python -m pytest -q` and share any failure output.
+3. Run `python -m backend.ingestion.fetch_pit_stops 2023 --round 1 --dry-run`.
+4. If the dry-run output looks reasonable, ingest Bahrain with the same command without `--dry-run`.
+5. Verify pit-stop counts, missing values, driver foreign keys, and repeat-run idempotency before running pit-stop ingestion for the full season.
 
-Do not merge the pull request until local tests and the one-round dry-run succeed. The OpenF1 endpoint has a free-tier request limit; the loader spaces requests and should not be run repeatedly in rapid succession.
+Do not merge the pull request until the pit-stop loader has passed local tests, a live one-round dry-run, and a one-round idempotency check. The OpenF1 endpoint has a free-tier request limit, and the loader spaces API requests.
 
 ## Research notes
 
