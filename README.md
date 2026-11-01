@@ -136,7 +136,7 @@ After inspecting the saved records and repeat-run behavior, process all 2023 Rac
 python -m backend.ingestion.fetch_pit_stops 2023
 ```
 
-The loader reads OpenF1's `pit` endpoint and the session's `drivers` endpoint, maps each driver number to the existing driver identity, and assigns each driver's pit visits a sequential stop number by timestamp. It preserves missing lap numbers or durations as NULL and reports them. The unique `(session_id, driver_id, stop_number)` key makes repeat runs upsert existing stop records.
+The loader reads OpenF1's `pit` endpoint and the session's `drivers` endpoint, maps each driver number to the existing driver identity, and assigns each driver's pit visits a sequential stop number by timestamp. If an OpenF1 session-level pit query returns HTTP 404, it retries at meeting level and filters records back to the intended Race session by `session_key`; it never imports practice or sprint stops into the race. It preserves missing lap numbers or durations as NULL and reports them. The unique `(session_id, driver_id, stop_number)` key makes repeat runs upsert existing stop records.
 
 **Duration meaning:** `pit_stops.duration_ms` stores the time spent traversing the pit lane (`lane_duration`, or legacy `pit_duration`) in milliseconds. This is not the incremental time lost versus continuing at normal racing pace, and it must not be added directly as strategy pit loss. The strategy model will need a separately calibrated pit-loss estimate.
 
