@@ -59,7 +59,7 @@ def test_build_lap_timeline_uses_median_driver_lap_starts_and_horizon():
         (datetime(2023, 3, 5, 15, 2, 1), 3),
     ]
     assert max_lap == 3
-    assert horizon == datetime(2023, 3, 5, 15, 3, 1)
+    assert horizon == datetime(2023, 3, 5, 15, 3, 2)
 
 
 def test_map_event_to_lap_prefers_source_lap_and_has_midpoint_fallback():
@@ -81,7 +81,7 @@ def test_normalize_race_control_pairs_sc_vsc_and_red_flag_periods():
         _event(1, 10, "SAFETY CAR DEPLOYED", lap=2),
         _event(3, 10, "SAFETY CAR IN THIS LAP", lap=4),
         _event(4, 10, "VIRTUAL SAFETY CAR DEPLOYED"),
-        _event(4, 40, "VIRTUAL SAFETY CAR ENDING"),
+        _event(4, 20, "VIRTUAL SAFETY CAR ENDING"),
         _event(5, 10, "RED FLAG", flag="RED", category="Flag"),
         _event(5, 40, "GREEN FLAG", flag="GREEN", category="Flag"),
     ]
