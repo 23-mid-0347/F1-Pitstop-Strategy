@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import argparse
 import math
-from datetime import date, datetime
 from typing import Any
 
 import fastf1
