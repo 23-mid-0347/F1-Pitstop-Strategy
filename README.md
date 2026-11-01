@@ -225,7 +225,10 @@ The first dataset is preliminary, not final research evidence. All track-status 
 │   │   ├── init_db.py
 │   │   ├── check_connection.py
 │   │   └── schema.sql
-│   ├── analysis/\n│   │   ├── audit_data_coverage.py\n│   │   └── build_clean_dataset.py\n│   └── ingestion/
+│   ├── analysis/
+│   │   ├── audit_data_coverage.py
+│   │   └── build_clean_dataset.py
+│   └── ingestion/
 │       ├── fetch_schedule.py
 │       ├── fetch_race_laps.py
 │       ├── fetch_pit_stops.py
@@ -241,7 +244,9 @@ The first dataset is preliminary, not final research evidence. All track-status 
 │   ├── test_race_lap_ingestion.py
 │   ├── test_pit_stop_ingestion.py
 │   ├── test_weather_ingestion.py
-│   ├── test_race_control_ingestion.py\n│   ├── test_data_coverage_audit.py\n│   └── test_clean_dataset.py
+│   ├── test_race_control_ingestion.py
+│   ├── test_data_coverage_audit.py
+│   └── test_clean_dataset.py
 ├── .env.example
 ├── .gitignore
 ├── .python-version
