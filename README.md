@@ -140,13 +140,15 @@ Do not paste credentials into chat or commit them to Git. FastF1 stores authenti
 │   │   └── schema.sql
 │   └── ingestion/
 │       ├── fetch_schedule.py
+│       ├── fetch_race_laps.py
 │       └── utils.py
 ├── docs/
 │   ├── BUILD_CHECKLIST.md
 │   └── PROJECT_PLAN_V5.md
 ├── tests/
 │   ├── test_database_config.py
-│   └── test_schedule_ingestion.py
+│   ├── test_schedule_ingestion.py
+│   └── test_race_lap_ingestion.py
 ├── .env.example
 ├── .gitignore
 ├── .python-version
