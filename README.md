@@ -4,7 +4,7 @@ A data-driven project to recommend a Formula 1 driver's next pit lap and tyre co
 
 ## Architecture
 
-1. **Data** — FastF1 timing, lap, tyre/stint, pit-stop, weather, and track-status data.
+1. **Data** — FastF1 for the season schedule; OpenF1's free historical API for race laps, driver metadata, and tyre stints.
 2. **Storage** — PostgreSQL, accessed with SQLAlchemy and psycopg 3.
 3. **Modelling** — an interpretable tyre-degradation baseline followed by a gradient-boosted model when it improves held-out performance.
 4. **Simulation** — lap-by-lap remaining-race simulation with sampled safety-car/VSC starts and durations.
@@ -66,7 +66,7 @@ From the repository root, with the virtual environment active:
 python -m pytest -q
 ```
 
-Tests validate database configuration and the schedule-ingestion normalization/upsert flow without requiring a live database or live FastF1 download.
+Tests validate database configuration and ingestion normalization/upsert logic without requiring a live database or live API download.
 
 ## Ingest one season's schedule
 
@@ -110,23 +110,11 @@ Then, after checking the first-round data, run all scheduled 2023 Grand Prix Rac
 python -m backend.ingestion.fetch_race_laps 2023
 ```
 
-The loader requires the Race sessions to exist in the local `events` and `sessions` tables. It retrieves each race with `fastf1.get_session(year, round, "R")` and loads laps and race-control messages without car telemetry or weather. A round is committed in its own transaction, and the unique session/driver/lap key makes re-runs update existing lap records.
+The loader requires Race sessions to exist in the local `events` and `sessions` tables. It queries OpenF1 for the season's historical race sessions and matches each stored event by meeting name; it fails if a meeting cannot be matched rather than guessing. The selected race is fetched using OpenF1's `laps`, `stints`, and `drivers` endpoints. A round is committed in its own transaction, and the unique session/driver/lap key makes re-runs update existing lap records.
 
-The loader preserves lap time in integer milliseconds, the source tyre compound, source stint number, `TyreLife`, `FreshTyre`, pit-in/out indicators, track status, deleted/accuracy flags, FastF1-generated-row indicator, and lap start/end offsets in milliseconds. Missing lap times remain NULL. The initial raw-ingestion stage does not filter out in-laps, out-laps, SC/VSC laps, deleted laps, or inaccurate laps. Rows are skipped only when they have no usable driver code or positive integer lap number, and those exclusions are counted. Explicit cleaning and attrition reporting belong to the next milestone.
+The loader stores lap time in integer milliseconds, driver name/code, tyre compound, stint number, and derived tyre age when OpenF1 provides enough stint information. OpenF1's `is_pit_out_lap` is retained. FastF1-specific fields that OpenF1 does not expose (for example, deleted-lap/accuracy flags, track status, pit-in marker, fresh-tyre flag, and elapsed lap offsets) remain NULL rather than being invented. Missing lap times remain NULL. The raw-ingestion stage does not filter out in-laps, out-laps, neutralized laps, or inaccurate laps. Rows are skipped only when they have no usable driver code or positive integer lap number, and those exclusions are counted. Explicit cleaning and attrition reporting belong to the next milestone.
 
-FastF1 3.9 supports F1TV authentication, and most historical timing data may require an active F1TV Access/Pro/Premium account. Check authentication status with:
-
-```bash
-python -m fastf1 auth f1tv --status
-```
-
-If authentication is needed, follow FastF1's interactive process:
-
-```bash
-python -m fastf1 auth f1tv --authenticate
-```
-
-Do not paste credentials into chat or commit them to Git. FastF1 stores authentication tokens locally. See the [FastF1 authentication documentation](https://github.com/theOehrly/Fast-F1/blob/main/docs/api_reference/accounts_auth.rst).
+[OpenF1's historical API](https://openf1.org/docs/) provides data from 2023 onward without authentication. The free tier is rate-limited, so this loader waits between requests. FastF1 remains used for schedule ingestion only; do not run an F1TV authentication flow for race laps.
 
 ## Repository layout
 
