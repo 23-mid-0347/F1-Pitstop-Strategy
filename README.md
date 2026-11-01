@@ -177,6 +177,7 @@ The weather loader's first implementation and mocked tests are on `feat/race-lap
 │       ├── fetch_schedule.py
 │       ├── fetch_race_laps.py
 │       ├── fetch_pit_stops.py
+│       ├── fetch_weather.py
 │       └── utils.py
 ├── docs/
 │   ├── BUILD_CHECKLIST.md
@@ -185,7 +186,8 @@ The weather loader's first implementation and mocked tests are on `feat/race-lap
 │   ├── test_database_config.py
 │   ├── test_schedule_ingestion.py
 │   ├── test_race_lap_ingestion.py
-│   └── test_pit_stop_ingestion.py
+│   ├── test_pit_stop_ingestion.py
+│   └── test_weather_ingestion.py
 ├── .env.example
 ├── .gitignore
 ├── .python-version
