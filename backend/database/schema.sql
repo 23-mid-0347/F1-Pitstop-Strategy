@@ -123,3 +123,7 @@ ALTER TABLE lap_times ADD COLUMN IF NOT EXISTS deleted_reason TEXT;
 ALTER TABLE lap_times ADD COLUMN IF NOT EXISTS fastf1_generated BOOLEAN;
 ALTER TABLE lap_times ADD COLUMN IF NOT EXISTS lap_start_time_ms BIGINT;
 ALTER TABLE lap_times ADD COLUMN IF NOT EXISTS lap_end_time_ms BIGINT;
+
+-- This is pit-lane traversal time, not incremental time lost versus racing.
+COMMENT ON COLUMN pit_stops.duration_ms IS
+    'Elapsed pit-lane time in milliseconds from OpenF1; not incremental pit loss versus normal racing pace.';
