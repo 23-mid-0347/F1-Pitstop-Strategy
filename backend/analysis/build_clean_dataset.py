@@ -44,7 +44,7 @@ SELECT sea.year, e.round AS round_number, e.event_name, e.event_date,
        lt.tyre_age, lt.stint_number, lt.fresh_tyre, lt.pit_in_lap,
        lt.pit_out_lap, lt.track_status, lt.is_accurate, lt.is_deleted,
        lt.deleted_reason, lt.fastf1_generated, lt.lap_start_time_ms,
-       lt.lap_end_time_ms
+       lt.lap_end_time_ms, lt.lap_start_at, lt.lap_end_at
 FROM lap_times lt
 JOIN sessions s ON s.session_id = lt.session_id
 JOIN events e ON e.event_id = s.event_id
@@ -60,12 +60,13 @@ MODEL_FIELDS = [
     "circuit_name", "session_id", "driver_code", "lap_number", "lap_time_ms",
     "lap_time_seconds", "compound", "tyre_age", "stint_number", "fresh_tyre",
     "pit_in_lap", "pit_out_lap", "track_status", "is_accurate", "is_deleted",
-    "deleted_reason", "fastf1_generated",
+    "deleted_reason", "fastf1_generated", "lap_start_at", "lap_end_at",
 ]
 EXCLUSION_FIELDS = [
     "year", "round_number", "event_name", "session_id", "driver_code",
     "lap_number", "lap_time_ms", "compound", "tyre_age", "pit_in_lap",
     "pit_out_lap", "track_status", "is_accurate", "is_deleted",
+    "lap_start_at", "lap_end_at",
     "exclusion_reason",
 ]
 
@@ -152,6 +153,8 @@ def clean_lap_rows(
                 "pit_in_lap": row.get("pit_in_lap"),
                 "pit_out_lap": row.get("pit_out_lap"),
                 "track_status": row.get("track_status"),
+                "lap_start_at": row.get("lap_start_at"),
+                "lap_end_at": row.get("lap_end_at"),
                 "is_accurate": row.get("is_accurate"),
                 "is_deleted": row.get("is_deleted"),
                 "exclusion_reason": reason,
@@ -232,6 +235,8 @@ def summarize_cleaning(
         "missing_pit_out_flag_rows": sum(row.get("pit_out_lap") is None for row in raw_rows),
         "missing_lap_start_offset_rows": sum(row.get("lap_start_time_ms") is None for row in raw_rows),
         "missing_lap_end_offset_rows": sum(row.get("lap_end_time_ms") is None for row in raw_rows),
+        "missing_lap_start_at_rows": sum(row.get("lap_start_at") is None for row in raw_rows),
+        "missing_lap_end_at_rows": sum(row.get("lap_end_at") is None for row in raw_rows),
         "sessions_with_circuit_mapping": len(circuit_mapped),
         "sessions_without_circuit_mapping": len(session_ids - circuit_mapped),
         "per_round": per_round,
@@ -295,7 +300,9 @@ def render_attrition_report(
         f"- Track status is missing for {summary['missing_track_status_rows']} / {summary['raw_rows']} raw rows. Neutralised laps cannot be reliably excluded using the currently persisted data.",
         f"- Pit-in flags are missing for {summary['missing_pit_in_flag_rows']} / {summary['raw_rows']} rows. A missing flag is not interpreted as a normal racing lap.",
         f"- Pit-out flags are missing for {summary['missing_pit_out_flag_rows']} / {summary['raw_rows']} rows; explicitly marked pit-out laps are excluded.",
-        f"- Lap start offsets are missing for {summary['missing_lap_start_offset_rows']} / {summary['raw_rows']} rows and end offsets for {summary['missing_lap_end_offset_rows']} / {summary['raw_rows']}. Weather-to-lap joining is therefore not attempted.",
+        f"- Legacy relative lap start/end offsets are missing for {summary['missing_lap_start_offset_rows']} / {summary['raw_rows']} and {summary['missing_lap_end_offset_rows']} / {summary['raw_rows']} rows respectively.",
+        f"- Absolute lap start/end timestamps are missing for {summary['missing_lap_start_at_rows']} / {summary['raw_rows']} and {summary['missing_lap_end_at_rows']} / {summary['raw_rows']} rows respectively. OpenF1 lap start times are approximate UTC timestamps; lap end timestamps are derived using the reported lap duration.",
+        "- Weather-to-lap joining remains disabled until timestamp coverage and alignment are audited.",
         f"- Formal circuit names are mapped for {summary['sessions_with_circuit_mapping']} / {summary['race_sessions']} race sessions. Event names are not silently substituted for circuit names.",
         "- Weather coverage is partial and is not joined into this dataset.",
         "- No arbitrary high-lap-time cutoff is applied. Unusual values require training-only diagnostics and sensitivity checks.",
@@ -373,6 +380,8 @@ def write_cleaning_artifacts(
         "missing_pit_out_flag_rows": summary["missing_pit_out_flag_rows"],
         "missing_lap_start_offset_rows": summary["missing_lap_start_offset_rows"],
         "missing_lap_end_offset_rows": summary["missing_lap_end_offset_rows"],
+        "missing_lap_start_at_rows": summary["missing_lap_start_at_rows"],
+        "missing_lap_end_at_rows": summary["missing_lap_end_at_rows"],
         "sessions_with_circuit_mapping": summary["sessions_with_circuit_mapping"],
         "sessions_without_circuit_mapping": summary["sessions_without_circuit_mapping"],
         "artifacts": {
@@ -386,7 +395,8 @@ def write_cleaning_artifacts(
             "Preliminary tyre-pace extract only; not the full evaluation dataset.",
             "Neutralisation filtering is incomplete because track_status is missing.",
             "Pit-in filtering is only possible when a source flag is present.",
-            "Lap start/end offsets are missing, so no weather-to-lap join was attempted.",
+            "OpenF1 absolute lap start timestamps are approximate; lap end timestamps are derived from lap duration.",
+            "Weather-to-lap joining is disabled until timestamp coverage and alignment are audited.",
             "Circuit mapping is incomplete.",
             "Fuel correction, driver/team effects, survival/censoring and tyre-cliff analysis remain unimplemented.",
         ],
