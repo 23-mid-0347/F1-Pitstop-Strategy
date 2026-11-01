@@ -26,3 +26,6 @@ build/
 
 # OS/editor
 .DS_Store
+
+# Locally generated per-lap modelling extracts (regenerate from PostgreSQL)
+data/processed/
