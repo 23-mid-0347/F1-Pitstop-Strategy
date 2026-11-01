@@ -93,7 +93,10 @@ Keep the degradation model, simulator, and optimizer as separate modules with ex
 - [ ] After OpenF1 access returns, dry-run Bahrain race-control and review timestamps, SC/VSC/RedFlag periods, approximate lap mappings, unmatched endings, and inferred closures.
 - [ ] Validate race-control periods on selected races, then full-season ingest and verify unique period keys and idempotency. Keep red-flag handling explicitly caveated.
 - [x] Add a database-backed raw-data coverage audit and unit tests to generate CSV and Markdown reports without API access.
-- [ ] Run `python -m backend.analysis.audit_data_coverage 2023`, inspect the generated counts, and preserve the report as the current data inventory. Explicit modelling exclusions/attrition reporting remains a later task.
+- [x] Run `python -m backend.analysis.audit_data_coverage 2023` locally and inspect the generated counts: 22 race sessions, 24,479 unique lap rows, 911 unique pit stops, 161 Bahrain weather observations, and zero race-control periods.
+- [x] Add a reproducible preliminary tyre-pace cleaning pipeline with an explicit first-match exclusion priority, one-row-per-exclusion CSV, per-race attrition report, and rules/checksum manifest; add mocked unit tests on `feat/race-lap-ingestion`.
+- [ ] Pull and run the full test suite for the cleaning pipeline, then run `python -m backend.analysis.build_clean_dataset 2023` against PostgreSQL and review the actual included/excluded counts.
+- [ ] Review the first cleaned extract and attrition report; resolve or explicitly scope missing track status, pit-in flags, lap timing offsets, and circuit mapping before freezing the model dataset.
 - [ ] Populate and validate the separate `stints` table if it adds reliable value beyond lap-level tyre compound, stint number, and tyre age.
 - [ ] Verify every upsert updates all intended fields and run a full-season repeat test.
 
