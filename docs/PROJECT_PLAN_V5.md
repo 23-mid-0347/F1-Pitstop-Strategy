@@ -27,49 +27,74 @@ Keep ingestion, cleaning, model, simulator, optimizer, API and UI as separate te
 
 Repository: https://github.com/23-mid-0347/F1-Pitstop-Strategy
 
-Milestone 0 changes committed to main:
-- Fixed .gitignore to exclude the actual FastF1 cache path backend/cache/ as well as other local/build artifacts.
-- Kept .env out of Git and updated the placeholder-only .env.example.
-- Added .python-version with Python 3.14 as reference, requirements.txt, requirements-dev.txt, pyproject.toml, package markers and README.md.
-- Standardized schema initialization as python -m database.init_db from the backend directory.
-- Added backend/database/check_connection.py.
-- Added tests/test_database_config.py.
-- Added docs/BUILD_CHECKLIST.md and this handoff document.
+### Merged into `main`
+- Milestone 0 scaffolding, database configuration, and configuration tests.
+- `backend/ingestion/fetch_schedule.py`: fetches and validates a season calendar, prints a dry-run summary, and upserts events and named sessions.
+- Schedule metadata columns on `events`: country, location, official event name, and event format.
+- Documentation for schedule ingestion and initial project setup.
 
-Core files currently present:
-- backend/database/schema.sql
-- backend/database/connection.py
-- backend/database/init_db.py
-- backend/database/check_connection.py
-- backend/ingestion/utils.py
-- backend/ingestion/fetch_schedule.py (initial loader on `feat/schedule-ingestion`; pending local run)
-- README.md, requirements.txt, requirements-dev.txt, pyproject.toml
-- tests/test_database_config.py, tests/test_schedule_ingestion.py
-- docs/BUILD_CHECKLIST.md
+### Verified locally by the user on 2026-11-01
+- Python 3.14.5 and the root `.venv` are active.
+- `python -m pip install --no-cache-dir -r requirements-dev.txt` completed with dependencies already satisfied.
+- The configuration suite passed: `3 passed in 0.23s`.
+- PostgreSQL connection check succeeded and schema initialization worked.
+- All 11 expected tables were present.
+- The 2023 schedule dry-run listed 22 events and 110 sessions.
+- A repeated schedule upsert left database counts unchanged: 1 season, 22 events, 110 sessions.
 
-Code-level facts observed from the repository:
-- SQLAlchemy uses the postgresql+psycopg dialect (psycopg 3).
-- init_db executes statements from schema.sql.
-- ingestion/utils.py contains FastF1 cache setup, upsert helpers and ms_from_timedelta() using integer nanosecond arithmetic (td.value // 1_000_000).
-- upsert_driver updates both full_name and nationality.
-- FastF1 cache path is backend/cache; keep it ignored by Git.
+### Current feature branch, not yet locally verified or merged
+Branch: `feat/race-lap-ingestion`
+
+- Updates FastF1 cache setup from deprecated `Cache.enable_cache` to `Cache.configure`.
+- Adds `backend/ingestion/fetch_race_laps.py` with one-round dry-run support and an all-race-seasons mode.
+- Adds lap metadata columns for stint number, tyre age/life, fresh-tyre flag, pit-in/out flags, track status, accuracy/deletion flags, FastF1-generated-row flag, and lap start/end session offsets.
+- Extends lap upserts to update all stored source fields for an existing session/driver/lap key.
+- Adds `tests/test_race_lap_ingestion.py` for normalization, missing values, source flags, duplicate identities, dry-run behavior, upsert inputs, and modern cache setup.
+- Updates README and checklist for race-lap ingestion and current FastF1 authentication behaviour.
+
+### Core file layout
+
+```text
+backend/
+  database/
+    connection.py
+    init_db.py
+    check_connection.py
+    schema.sql
+  ingestion/
+    utils.py
+    fetch_schedule.py
+    fetch_race_laps.py       # feature branch only until merged
+tests/
+  test_database_config.py
+  test_schedule_ingestion.py
+  test_race_lap_ingestion.py # feature branch only until merged
+docs/
+  BUILD_CHECKLIST.md
+  PROJECT_PLAN_V5.md
+```
+
+### Code and data-handling rules to preserve
+- SQLAlchemy uses the `postgresql+psycopg` dialect (psycopg 3).
+- `init_db.py` executes the SQL statements in `schema.sql`; keep semicolons out of SQL comments because the current initializer splits on semicolons.
+- Use integer nanosecond arithmetic for timedelta conversion and preserve explicit millisecond units in PostgreSQL.
+- Driver-name enrichment remains deferred. When the source provides only the three-letter code, use that as `full_name`, not NULL.
+- Cache files under `backend/cache/` must remain ignored by Git.
+- A remote commit or passing mocked tests do not prove that a live FastF1 download or PostgreSQL lap upsert was run locally.
 
 ## 3. Local environment and database handoff
 
-As of 2026-11-01, the user verified the following locally on macOS:
-- Active virtual environment uses Python 3.14.5.
-- `python -m pip install --no-cache-dir -r requirements-dev.txt` completed with the dependencies already satisfied.
-- `python -m pytest -q` passed: **3 passed in 0.23s**.
-- `psql` connected as role `shyamprasad` to `f1_pitstop_optimizer`.
-- `python -m database.check_connection` returned `Database connection OK`.
-- `python -m database.init_db` initialized 18 SQL statements.
-- `psql ... -c "\\dt"` showed all 11 expected tables.
+As of 2026-11-01, the user reported the following successful local checks on macOS:
+- Python version: `3.14.5`; project virtual environment: `.venv`.
+- PostgreSQL: `localhost:5432`, database `f1_pitstop_optimizer`, role `shyamprasad`.
+- `python -m database.check_connection` succeeded.
+- Database schema is initialized, with 11 base tables plus schedule metadata columns on `events`.
+- The 2023 schedule is stored and has been verified as repeatable: 1 season, 22 events, and 110 sessions after a second load.
+- The schedule loader still showed the FastF1 `Cache.enable_cache` deprecation warning on the user's merged `main`; the feature branch replaces it with `Cache.configure`.
 
-Milestone 0's local verification is therefore complete for the reported environment. The initial schedule-loader changes are in branch `feat/schedule-ingestion`; they have not yet been tested on the user's Mac or merged to `main`.
-  
-### Local .env settings
+### Local environment variables
 
-Expected values (local only; do not commit credentials):
+Expected root `.env` values (local only; never commit secrets):
 
     DB_HOST=localhost
     DB_PORT=5432
@@ -77,32 +102,16 @@ Expected values (local only; do not commit credentials):
     DB_USER=shyamprasad
     DB_PASSWORD=
 
-Fill DB_PASSWORD with the actual password if local PostgreSQL authentication requires it. Never place real credentials in this document or in GitHub.
+Set `DB_PASSWORD` only as required by the local PostgreSQL role. Do not paste credentials into chat or add them to GitHub.
 
-### Exact next commands
+### FastF1 authentication note
 
-From repository root:
+FastF1 3.9.0 documents that most historical timing data may require an active F1TV Access/Pro/Premium subscription. If lap loading prompts for authentication, check status and follow the interactive login process:
 
-    source .venv/bin/activate
-    python -m pip install --no-cache-dir -r requirements-dev.txt
-    python -m pytest -q
+    python -m fastf1 auth f1tv --status
+    python -m fastf1 auth f1tv --authenticate
 
-Verify the database exists and can be accessed:
-
-    psql -h localhost -p 5432 -U shyamprasad -d postgres -c "\\l"
-    psql -h localhost -p 5432 -U shyamprasad -d f1_pitstop_optimizer -c "SELECT current_user, current_database();"
-
-Then initialize the schema:
-
-    cd backend
-    python -m database.check_connection
-    python -m database.init_db
-    cd ..
-    psql -h localhost -p 5432 -U shyamprasad -d f1_pitstop_optimizer -c "\\dt"
-
-Expected tables: drivers, constructors, circuits, seasons, events, sessions, lap_times, pit_stops, stints, weather, safety_car_periods.
-
-Do not start ingestion until package installation/tests pass, DB connection works, schema initialization succeeds, and all eleven tables appear. For errors, keep the full text but redact credentials. Diagnose server status, DB name, role and authentication separately.
+Do not store credentials in repository files. FastF1 stores a local token and may require re-authentication when it expires. Official docs: https://github.com/theOehrly/Fast-F1/blob/main/docs/api_reference/accounts_auth.rst
 
 ## 4. Current database design
 
@@ -114,13 +123,13 @@ Do not start ingestion until package installation/tests pass, DB connection work
 | seasons | Unique season year |
 | events | Season, round, event name, optional circuit link, date, country, location, official event name, event format |
 | sessions | Event, session type, session date |
-| lap_times | Session/driver/lap, lap time in milliseconds, tyre compound |
+| lap_times | Session/driver/lap, time in milliseconds, compound, stint number, source tyre age/freshness, pit flags, track status, accuracy/deletion flags, generated-row flag, lap start/end session offsets (new lap-ingestion columns are on `feat/race-lap-ingestion` pending local verification) |
 | pit_stops | Session/driver/stop number, lap, duration in milliseconds |
 | stints | Session/driver/stint number, compound, start/end lap |
 | weather | Timestamp, air/track temperature, humidity, rainfall, wind |
 | safety_car_periods | Session, start/end lap, SC/VSC/RedFlag type |
 
-The schema does not currently store explicit tyre age for every lap. Before modelling, preserve FastF1 tyre-life/age where available and define a validated field in the lap table or a reproducible modelling dataset. Document provenance and missing-value handling.
+The feature branch adds nullable lap-level `tyre_age`, `stint_number`, `fresh_tyre`, pit-in/out flags, track status, accuracy/deletion flags, a FastF1-generated-row flag, and session-relative lap start/end offsets. The loader preserves supplied source values; it does not infer tyre age when FastF1 omits it. These columns must be applied with `python -m database.init_db` from `backend/` before writing lap data.
 
 Other database rules:
 - Keep this database separate from f1_analytics and the F1 RAG project.
@@ -206,16 +215,18 @@ Checkboxes distinguish code already committed from local checks still pending. C
 **Exit:** install, tests, DB connection, schema initialization and table listing all pass locally.
 
 ### Milestone 1 — one-season ingestion
-- [x] Add the initial schedule/event/session loader and mocked unit tests on branch `feat/schedule-ingestion`.
-- [ ] On the user's Mac, run tests and a 2023 dry-run, initialize the new schedule metadata columns, ingest the 2023 schedule twice, and verify no duplicate events/sessions.
-- [ ] Add lap ingestion with units, missing values and source IDs.
-- [ ] Add stint/compound and tyre-age provenance.
-- [ ] Add pit stops, weather and track-status periods (SC/VSC/red flag).
-- [ ] Document track-status timestamp-to-lap mapping and mid-lap policy.
-- [ ] Test upsert completeness and idempotency.
-- [ ] Load one complete season; validate counts, foreign keys, nulls, units and failed-session logs.
+- [x] Add schedule/event/session loader and mocked tests; merge to `main`.
+- [x] Verify the 2023 schedule locally: 22 events, 110 sessions, and repeat-run counts remain 1 season, 22 events, 110 sessions.
+- [x] Add initial race-lap ingestion code and mocked tests on branch `feat/race-lap-ingestion`.
+- [ ] Run expanded tests and one-round FastF1 dry-run locally.
+- [ ] Apply the lap metadata schema changes from `backend/` using `python -m database.init_db`.
+- [ ] Ingest round 1 and inspect stored lap counts, missing lap times, tyre age, compound, flags, and track-status values.
+- [ ] Verify repeated lap ingestion updates existing rows without increasing session/driver/lap identities.
+- [ ] Run the full 2023 set of Race sessions after the one-round smoke test succeeds.
+- [ ] Add separate pit-stop, weather, and SC/VSC/red-flag period ingestion with documented time-to-lap and mid-lap policies.
+- [ ] Populate/validate the separate `stints` table if it adds reliable value beyond lap-level `Stint`, `Compound`, `TyreLife`, and `FreshTyre`.
 
-**Exit:** one-season ingestion is repeatable and does not duplicate rows.
+**Exit:** one-season ingestion is repeatable, preserves raw source fields and quality flags, and has documented counts, nulls, units and failures.
 
 ### Milestone 2 — data quality
 - [ ] Build clean Race-session dataset and explicit filter rules.
@@ -279,30 +290,40 @@ Checkboxes distinguish code already committed from local checks still pending. C
 
 ## 8. Exact immediate next step
 
-Milestone 0 has been verified locally (Python 3.14.5, dependencies available, 3 tests passing, PostgreSQL connection OK, schema initialized, and all 11 expected tables present).
+The schedule layer has passed a local idempotency check. The next code is staged on `feat/race-lap-ingestion`, not merged into `main` yet.
 
-The next implementation is on branch `feat/schedule-ingestion`. From the repository root, fetch and check out that branch:
+After switching to that branch, run the expanded mocked test suite:
 
-    git fetch origin feat/schedule-ingestion
-    git switch -c feat/schedule-ingestion --track origin/feat/schedule-ingestion
-
-Then run:
-
+    git fetch origin
+    git switch --track -c feat/race-lap-ingestion origin/feat/race-lap-ingestion
     python -m pytest -q
-    python -m backend.ingestion.fetch_schedule 2023 --dry-run
 
-If both pass, update the local database with the new event metadata columns by running the initializer from `backend/`:
+The expected test count is the original 3 database configuration tests, 6 schedule tests, and 7 new lap-ingestion tests. Treat the actual pytest output as authoritative.
+
+Then apply new lap metadata columns safely (from the backend directory):
 
     cd backend
     python -m database.init_db
     cd ..
 
-Then ingest 2023 and repeat the ingestion:
+Check FastF1 authentication status if required, then run a one-round dry-run first:
 
-    python -m backend.ingestion.fetch_schedule 2023
-    python -m backend.ingestion.fetch_schedule 2023
+    python -m fastf1 auth f1tv --status
+    python -m backend.ingestion.fetch_race_laps 2023 --round 1 --dry-run
 
-Compare row counts in `seasons`, `events`, and `sessions` before and after the second run. They should not increase on the repeated load. Do not proceed to lap telemetry until the schedule load and idempotency checks pass. Keep any credentials private.
+If timing-data access asks for authentication, use FastF1's documented interactive flow:
+
+    python -m fastf1 auth f1tv --authenticate
+
+After the dry-run output is sensible, ingest round 1:
+
+    python -m backend.ingestion.fetch_race_laps 2023 --round 1
+
+Inspect the resulting lap rows and re-run round 1 to verify counts and unique session/driver/lap keys remain unchanged. Only after this succeeds, ingest all 2023 Race sessions:
+
+    python -m backend.ingestion.fetch_race_laps 2023
+
+Do not build the tyre model until lap coverage, tyre-age provenance, nulls, quality flags, and duplicate-free re-runs have been inspected. Keep all credentials private.
 
 ## 9. Research positioning
 
