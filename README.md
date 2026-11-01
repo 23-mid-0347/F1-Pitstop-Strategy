@@ -116,6 +116,32 @@ The loader stores lap time in integer milliseconds, driver name/code, tyre compo
 
 [OpenF1's historical API](https://openf1.org/docs/) provides data from 2023 onward without authentication. The free tier is rate-limited, so this loader waits between requests. FastF1 remains used for schedule ingestion only; do not run an F1TV authentication flow for race laps.
 
+## Ingest Grand Prix pit stops
+
+After race laps are present in PostgreSQL, start with a Bahrain 2023 dry run:
+
+```bash
+python -m backend.ingestion.fetch_pit_stops 2023 --round 1 --dry-run
+```
+
+If it validates the expected pit visits, ingest that round:
+
+```bash
+python -m backend.ingestion.fetch_pit_stops 2023 --round 1
+```
+
+After inspecting the saved records and repeat-run behavior, process all 2023 Race sessions:
+
+```bash
+python -m backend.ingestion.fetch_pit_stops 2023
+```
+
+The loader reads OpenF1's `pit` endpoint and the session's `drivers` endpoint, maps each driver number to the existing driver identity, and assigns each driver's pit visits a sequential stop number by timestamp. It preserves missing lap numbers or durations as NULL and reports them. The unique `(session_id, driver_id, stop_number)` key makes repeat runs upsert existing stop records.
+
+**Duration meaning:** `pit_stops.duration_ms` stores the time spent traversing the pit lane (`lane_duration`, or legacy `pit_duration`) in milliseconds. This is not the incremental time lost versus continuing at normal racing pace, and it must not be added directly as strategy pit loss. The strategy model will need a separately calibrated pit-loss estimate.
+
+The OpenF1 historical API is free from 2023 onward but rate-limited; the loader spaces requests. Source details: [OpenF1 API documentation](https://openf1.org/docs/).
+
 ## Repository layout
 
 ```text
@@ -129,6 +155,7 @@ The loader stores lap time in integer milliseconds, driver name/code, tyre compo
 │   └── ingestion/
 │       ├── fetch_schedule.py
 │       ├── fetch_race_laps.py
+│       ├── fetch_pit_stops.py
 │       └── utils.py
 ├── docs/
 │   ├── BUILD_CHECKLIST.md
