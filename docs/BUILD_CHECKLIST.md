@@ -85,8 +85,11 @@ Keep the degradation model, simulator, and optimizer as separate modules with ex
 - [x] Validate all 22 rounds in PostgreSQL: row counts match unique `(session_id, driver_id, stop_number)` identities; zero missing laps and durations.
 - [x] Repeat full-season pit-stop ingestion and verify idempotency: the database remained at 911 rows and 911 unique stop identities.
 - [x] Add the OpenF1 weather loader, dry-run support, mocked tests, and README instructions on `feat/race-lap-ingestion`; local validation is pending.
-- [ ] Pull and run the complete test suite and a live Bahrain weather dry-run; inspect row counts, timestamp exclusions, and sensor-field missingness before writing.
+- [ ] Retry the Bahrain weather dry-run after OpenF1's temporary HTTP 401 restriction is lifted; inspect row counts, timestamp exclusions, and sensor-field missingness before writing.
 - [ ] Ingest 2023 weather only after the one-round dry-run passes; verify row counts, `(session_id, recorded_at)` uniqueness, and repeat-run idempotency.
+- [x] Add an initial OpenF1 race-control period loader, mocked tests, and auditable schema fields on `feat/race-lap-ingestion`; local tests and live validation are pending.
+- [ ] Run race-control unit tests and schema initialization locally. After OpenF1 access returns, dry-run Bahrain and verify source timestamps, SC/VSC/RedFlag periods, approximate lap mappings, unmatched ends, and inferred closures.
+- [ ] Validate race-control periods on selected races, then full-season ingest and verify unique period keys and idempotency. Keep red-flag handling explicitly caveated.
 - [ ] Populate and validate the separate `stints` table if it adds reliable value beyond lap-level tyre compound, stint number, and tyre age.
 - [ ] Verify every upsert updates all intended fields and run a full-season repeat test.
 
