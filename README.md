@@ -163,7 +163,8 @@ The OpenF1 historical API is free from 2023 onward but rate-limited; the loader 
 ├── tests/
 │   ├── test_database_config.py
 │   ├── test_schedule_ingestion.py
-│   └── test_race_lap_ingestion.py
+│   ├── test_race_lap_ingestion.py
+│   └── test_pit_stop_ingestion.py
 ├── .env.example
 ├── .gitignore
 ├── .python-version
