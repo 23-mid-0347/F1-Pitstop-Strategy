@@ -101,6 +101,24 @@ CREATE INDEX IF NOT EXISTS idx_pitstops_session_driver ON pit_stops(session_id, 
 CREATE INDEX IF NOT EXISTS idx_stints_session_driver ON stints(session_id, driver_id);
 CREATE INDEX IF NOT EXISTS idx_weather_session ON weather(session_id);
 CREATE INDEX IF NOT EXISTS idx_safetycar_session ON safety_car_periods(session_id);
+ALTER TABLE safety_car_periods ADD COLUMN IF NOT EXISTS start_time TIMESTAMP;
+ALTER TABLE safety_car_periods ADD COLUMN IF NOT EXISTS end_time TIMESTAMP;
+ALTER TABLE safety_car_periods ADD COLUMN IF NOT EXISTS end_inferred BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE safety_car_periods ADD COLUMN IF NOT EXISTS start_lap_method TEXT NOT NULL DEFAULT 'source_lap_number';
+ALTER TABLE safety_car_periods ADD COLUMN IF NOT EXISTS end_lap_method TEXT NOT NULL DEFAULT 'source_lap_number';
+CREATE UNIQUE INDEX IF NOT EXISTS uq_safetycar_period_identity
+    ON safety_car_periods(session_id, start_time, period_type);
+
+COMMENT ON COLUMN safety_car_periods.start_time IS
+    'UTC event timestamp stored as UTC-naive time for reproducible source-to-lap mapping';
+COMMENT ON COLUMN safety_car_periods.end_time IS
+    'UTC event timestamp stored as UTC-naive time for reproducible source-to-lap mapping';
+COMMENT ON COLUMN safety_car_periods.end_inferred IS
+    'True when a period end was inferred from a later transition or observed race horizon';
+COMMENT ON COLUMN safety_car_periods.start_lap_method IS
+    'Source lap number or timestamp fallback using nearest median lap start';
+COMMENT ON COLUMN safety_car_periods.end_lap_method IS
+    'Source lap number, timestamp fallback, or observed race horizon';
 
 -- Preserve schedule fields that FastF1 supplies before a formal circuit name is
 -- resolved. These ALTERs also upgrade databases initialized from an older schema.
@@ -108,3 +126,30 @@ ALTER TABLE events ADD COLUMN IF NOT EXISTS country TEXT;
 ALTER TABLE events ADD COLUMN IF NOT EXISTS location TEXT;
 ALTER TABLE events ADD COLUMN IF NOT EXISTS official_event_name TEXT;
 ALTER TABLE events ADD COLUMN IF NOT EXISTS event_format TEXT;
+
+
+-- Preserve source tyre-age, pit-lap, track-status and quality indicators for modelling.
+ALTER TABLE lap_times ADD COLUMN IF NOT EXISTS stint_number INT;
+ALTER TABLE lap_times ADD COLUMN IF NOT EXISTS tyre_age DOUBLE PRECISION;
+ALTER TABLE lap_times ADD COLUMN IF NOT EXISTS fresh_tyre BOOLEAN;
+ALTER TABLE lap_times ADD COLUMN IF NOT EXISTS pit_in_lap BOOLEAN;
+ALTER TABLE lap_times ADD COLUMN IF NOT EXISTS pit_out_lap BOOLEAN;
+ALTER TABLE lap_times ADD COLUMN IF NOT EXISTS track_status TEXT;
+ALTER TABLE lap_times ADD COLUMN IF NOT EXISTS is_accurate BOOLEAN;
+ALTER TABLE lap_times ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN;
+ALTER TABLE lap_times ADD COLUMN IF NOT EXISTS deleted_reason TEXT;
+ALTER TABLE lap_times ADD COLUMN IF NOT EXISTS fastf1_generated BOOLEAN;
+ALTER TABLE lap_times ADD COLUMN IF NOT EXISTS lap_start_time_ms BIGINT;
+ALTER TABLE lap_times ADD COLUMN IF NOT EXISTS lap_end_time_ms BIGINT;
+ALTER TABLE lap_times ADD COLUMN IF NOT EXISTS lap_start_at TIMESTAMP;
+ALTER TABLE lap_times ADD COLUMN IF NOT EXISTS lap_end_at TIMESTAMP;
+
+-- Preserve source duration semantics so modelling does not mistake this for incremental pit loss.
+COMMENT ON COLUMN pit_stops.duration_ms IS
+    'Source-reported pit-stop duration in milliseconds, not incremental pit loss versus normal racing pace. May include pit entry, exit, or red-flag delay.';
+
+
+COMMENT ON COLUMN lap_times.lap_start_at IS
+    'Approximate UTC lap start timestamp sourced from OpenF1 laps.date_start; stored as UTC-naive TIMESTAMP';
+COMMENT ON COLUMN lap_times.lap_end_at IS
+    'Derived approximate UTC lap end timestamp: OpenF1 laps.date_start plus laps.lap_duration; stored as UTC-naive TIMESTAMP';

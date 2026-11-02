@@ -2,7 +2,7 @@
 
 Repository: https://github.com/23-mid-0347/F1-Pitstop-Strategy  
 Plan reviewed: Project Plan V5  
-Review date: 2026-11-01
+Review date: 2026-11-02
 
 ## Goal
 
@@ -30,7 +30,7 @@ This is a repository-source review, not a claim that the local database or end-t
 
 ## Architecture recommendation
 
-FastF1 -> ingestion and quality checks -> PostgreSQL -> modelling dataset -> tyre model -> stochastic race simulator -> strategy optimizer -> FastAPI -> React interface -> backtest/evaluation.
+FastF1 schedule + OpenF1 historical race data -> ingestion and quality checks -> PostgreSQL -> modelling dataset -> tyre model -> stochastic race simulator -> strategy optimizer -> FastAPI -> React interface -> backtest/evaluation.
 
 Keep the degradation model, simulator, and optimizer as separate modules with explicit inputs and outputs. This helps unit testing and makes recommendations explainable.
 
@@ -51,7 +51,7 @@ Keep the degradation model, simulator, and optimizer as separate modules with ex
 13. **API:** build/test FastAPI endpoints after core Python functions work in ordinary unit tests. Use request/response schemas, validation, typed outputs, and parameterized SQL. Avoid optional SQL parameters with ambiguous PostgreSQL types; cast optional parameters.
 14. **Reproducibility:** record data coverage, source season/session identifiers, cleaning rules, model version, simulation count, random seed, assumptions, and evaluation metrics with each run.
 15. **Scope limits:** version 1 is a single-driver strategy support model, not an official team simulator. Traffic, overtaking, multi-car undercut/overcut games, live ingestion, and full wet-weather transitions are later scope unless required.
-16. **Tyre age must be explicit:** add a per-lap tyre-age field (and preferably source stint number/fresh-tyre indicator) to `lap_times` or the clean modelling dataset. Stint start/end laps alone cannot reliably identify the age of a used tyre fitted during a race. Use FastF1's tyre-life field when available and document missing-value handling.
+16. **Tyre age must be explicit:** add a per-lap tyre-age field (and preferably source stint number/fresh-tyre indicator) to `lap_times` or the clean modelling dataset. Stint start/end laps alone cannot reliably identify the age of a used tyre fitted during a race. Use source tyre age when available; with OpenF1, derive lap-level age from the stint's tyre_age_at_start and lap offset, and document missing-value handling.
 17. **Pit loss must be calibrated correctly:** `pit_stops.duration_ms` records pit-lane entry-to-exit duration, not the extra time lost versus racing at normal pace. Do not add that raw duration directly to lap-time sums. Estimate circuit/session pit loss as incremental time relative to a green-flag reference, and model the SC/VSC reduction as a separate calibrated assumption.
 18. **Legal strategy constraints:** version 1 should expose mandatory compound/stop rules as explicit configurable constraints, using the relevant season's regulations. Never rank an infeasible strategy as optimal. Wet and red-flag cases should be flagged unsupported until their rules are implemented and tested.
 19. **V1 recommendation scope:** recommend the next pit decision from the current race state and simulate the remainder of the race under documented assumptions. Keep the number of future stops configurable but bounded; don't silently assume a strategy is legal or globally optimal if later stops are outside the search space.
@@ -72,17 +72,35 @@ Keep the degradation model, simulator, and optimizer as separate modules with ex
 
 ### Milestone 1 — Database and one-season ingestion
 - [x] Correct the init script usage comment and standardize module invocation.
-- [x] Add the initial schedule/event/session ingestion script (`backend/ingestion/fetch_schedule.py`) and mocked unit tests on branch `feat/schedule-ingestion`.
-- [ ] Run the full test suite and schedule dry-run locally; initialize the new schedule metadata columns; ingest the 2023 schedule twice and verify event/session counts remain unchanged.
-- [ ] Implement lap ingestion, preserving time units and missing values.
-- [ ] Implement stint/compound ingestion with reliable tyre-age derivation.
-- [ ] Implement pit-stop ingestion and document what duration means.
-- [ ] Implement weather ingestion.
-- [ ] Implement track-status-to-lap mapping for SC/VSC/red-flag periods, including mid-lap policy.
-- [ ] Ensure upserts are idempotent and update every intended field.
-- [ ] Run one complete season and verify row counts and foreign-key relationships.
+- [x] Add the schedule/event/session ingestion script and mocked tests; locally verified 22 events and 110 sessions for 2023, with idempotent upserts.
+- [x] Add OpenF1-based race-lap ingestion and mocked tests on `feat/race-lap-ingestion`.
+- [x] Run the expanded lap-loader tests locally (22 passed before pit-stop-loader tests were added) and initialize the lap metadata schema.
+- [x] Dry-run and ingest Bahrain 2023; verify the 1,058-row upsert is idempotent (1,058 total rows and 1,058 unique identities after a repeat run).
+- [x] Ingest all 22 2023 Race sessions from OpenF1: 24,479 lap rows processed.
+- [x] Validate all race groups in PostgreSQL: `lap_rows` matched `unique_laps` in all 22 races; there are 118 missing lap times and 92 each with missing compound, tyre age, and stint number.
+- [x] Capture compound, stint number, and derived tyre age in lap-level data where OpenF1 provides them.
+- [x] Add Jolpica historical pit-stop ingestion with dry-run support, mocked tests, and documented source-duration semantics.
+- [x] Dry-run all 22 2023 Race sessions: 911 source stops and 911 upsertable records; zero missing laps/durations and zero unknown-driver mappings.
+- [x] Ingest all 22 2023 Race sessions: 911 pit-stop records processed and written.
+- [x] Validate all 22 rounds in PostgreSQL: row counts match unique `(session_id, driver_id, stop_number)` identities; zero missing laps and durations.
+- [x] Repeat full-season pit-stop ingestion and verify idempotency: the database remained at 911 rows and 911 unique stop identities.
+- [x] Add the OpenF1 weather loader, dry-run support, mocked tests, and README instructions on `feat/race-lap-ingestion`.
+- [x] Run weather unit tests locally as part of the 49-test suite. Bahrain weather dry-run and first write succeeded: 161 observations, zero invalid timestamps, and no missing listed weather fields.
+- [ ] Retry Bahrain weather ingestion after OpenF1's temporary HTTP 401 restriction is lifted; verify the stored count remains 161 and unique `(session_id, recorded_at)` identities remain 161.
+- [ ] Ingest 2023 weather only after live access returns and one-round repeat-run idempotency is verified.
+- [x] Add an initial OpenF1 race-control period loader, mocked tests, and auditable schema fields on `feat/race-lap-ingestion`.
+- [x] Run the complete local suite: 49 passed; initialize database schema successfully (46 statements); verify the new columns and unique period index exist.
+- [ ] After OpenF1 access returns, dry-run Bahrain race-control and review timestamps, SC/VSC/RedFlag periods, approximate lap mappings, unmatched endings, and inferred closures.
+- [ ] Validate race-control periods on selected races, then full-season ingest and verify unique period keys and idempotency. Keep red-flag handling explicitly caveated.
+- [x] Add a database-backed raw-data coverage audit and unit tests to generate CSV and Markdown reports without API access.
+- [x] Run `python -m backend.analysis.audit_data_coverage 2023` locally and inspect the generated counts: 22 race sessions, 24,479 unique lap rows, 911 unique pit stops, 161 Bahrain weather observations, and zero race-control periods.
+- [x] Add a reproducible preliminary tyre-pace cleaning pipeline with an explicit first-match exclusion priority, one-row-per-exclusion CSV, per-race attrition report, and rules/checksum manifest; add mocked unit tests on `feat/race-lap-ingestion`.
+- [ ] Pull and run the full test suite for the cleaning pipeline, then run `python -m backend.analysis.build_clean_dataset 2023` against PostgreSQL and review the actual included/excluded counts.
+- [ ] Review the first cleaned extract and attrition report; resolve or explicitly scope missing track status, pit-in flags, lap timing offsets, and circuit mapping before freezing the model dataset.
+- [ ] Populate and validate the separate `stints` table if it adds reliable value beyond lap-level tyre compound, stint number, and tyre age.
+- [ ] Verify every upsert updates all intended fields and run a full-season repeat test.
 
-**Exit condition:** re-running ingestion does not duplicate rows; failed sessions are logged; source-to-database checks pass.
+**Exit condition:** schedule, lap and pit-stop ingestion are repeatable; raw values, nulls, units and failures are documented; source-to-database checks pass. Weather and race-control ingestion still require live repeat-run verification.
 
 ### Milestone 2 — Data quality and modelling dataset
 - [ ] Build explicit clean-lap filtering rules.
@@ -159,7 +177,19 @@ Keep the degradation model, simulator, and optimizer as separate modules with ex
 
 ## Immediate next task
 
-Milestone 0 has been verified on the user's Mac as of 2026-11-01: dependencies are present, 3 configuration tests pass, PostgreSQL connection succeeds, schema initialization succeeds, and all 11 expected tables are present. Branch `feat/schedule-ingestion` contains the initial FastF1 schedule loader, event metadata columns, and mocked tests. After checking out that branch, run `python -m pytest -q`, run `python -m backend.ingestion.fetch_schedule 2023 --dry-run`, apply the updated schema from `backend/`, then ingest 2023 and repeat the ingestion. Confirm event/session counts are unchanged on the second run before adding lap, stint, pit-stop, weather, and track-status loaders.
+**Pit-stop ingestion is verified for 2023:** the local dry-run reported 911 source and upsertable records across 22 Grand Prix races; PostgreSQL contains 911 rows and 911 unique `(session_id, driver_id, stop_number)` identities, with no missing lap numbers or durations. A second full-season ingestion left those counts unchanged. The reported dry-run also found no unknown driver mappings. The pit-stop duration must still not be interpreted as incremental pit loss versus green-flag pace.
+
+The weather-loader implementation and mocked tests have now been added to `feat/race-lap-ingestion`, but they have not yet been run in the user's local environment.
+
+From the repository root on the user's Mac:
+1. Run `git pull --ff-only origin feat/race-lap-ingestion`.
+2. Run `python -m pytest -q` and resolve any failure before live downloads.
+3. Run `python -m backend.ingestion.fetch_weather 2023 --round 1 --dry-run`.
+4. Inspect row counts, excluded invalid timestamps, and missing sensor-field counts. An empty response or a failed session match must be investigated rather than treated as successful ingestion.
+5. Only after the dry-run and tests pass, run `python -m backend.ingestion.fetch_weather 2023 --round 1`, verify PostgreSQL counts and uniqueness on `(session_id, recorded_at)`, then repeat the round to verify idempotency.
+6. Ingest all 2023 Race-session weather only after the Bahrain write and repeat-run checks pass.
+
+Keep raw/source weather fields and missing values auditable. The schema stores `recorded_at` as a timezone-naive PostgreSQL `TIMESTAMP`, so the loader explicitly converts OpenF1's UTC timestamps to UTC-naive datetimes. Do not proceed to event modelling until weather ingestion has source and database validation evidence.
 
 ## Research notes
 

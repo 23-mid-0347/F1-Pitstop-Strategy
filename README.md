@@ -4,7 +4,7 @@ A data-driven project to recommend a Formula 1 driver's next pit lap and tyre co
 
 ## Architecture
 
-1. **Data** — FastF1 timing, lap, tyre/stint, pit-stop, weather, and track-status data.
+1. **Data** — FastF1 for the season schedule; OpenF1's free historical API for race laps, driver metadata, and tyre stints.
 2. **Storage** — PostgreSQL, accessed with SQLAlchemy and psycopg 3.
 3. **Modelling** — an interpretable tyre-degradation baseline followed by a gradient-boosted model when it improves held-out performance.
 4. **Simulation** — lap-by-lap remaining-race simulation with sampled safety-car/VSC starts and durations.
@@ -66,7 +66,7 @@ From the repository root, with the virtual environment active:
 python -m pytest -q
 ```
 
-Tests validate database configuration and the schedule-ingestion normalization/upsert flow without requiring a live database or live FastF1 download.
+Tests validate database configuration and ingestion normalization/upsert logic without requiring a live database or live API download.
 
 ## Ingest one season's schedule
 
@@ -88,6 +88,133 @@ The loader uses database upserts keyed by the current unique constraints, so rep
 
 FastF1's cache is stored under `backend/cache/`; cache files should not be committed.
 
+## Ingest Grand Prix race laps
+
+Run from the repository root after the season schedule has been ingested and the database schema has been initialized.
+
+Start with a dry run of the 2023 Bahrain Grand Prix. It fetches and validates the lap table but does not insert driver or lap rows:
+
+```bash
+python -m backend.ingestion.fetch_race_laps 2023 --round 1 --dry-run
+```
+
+If the dry run succeeds, ingest that round:
+
+```bash
+python -m backend.ingestion.fetch_race_laps 2023 --round 1
+```
+
+Then, after checking the first-round data, run all scheduled 2023 Grand Prix Race sessions:
+
+```bash
+python -m backend.ingestion.fetch_race_laps 2023
+```
+
+The loader requires Race sessions to exist in the local `events` and `sessions` tables. It queries OpenF1 for the season's historical race sessions and matches each stored event by meeting name; it fails if a meeting cannot be matched rather than guessing. The selected race is fetched using OpenF1's `laps`, `stints`, and `drivers` endpoints. A round is committed in its own transaction, and the unique session/driver/lap key makes re-runs update existing lap records.
+
+The loader stores lap time in integer milliseconds, driver name/code, tyre compound, stint number, and derived tyre age when OpenF1 provides enough stint information. OpenF1's `is_pit_out_lap` is retained. FastF1-specific fields that OpenF1 does not expose (for example, deleted-lap/accuracy flags, track status, pit-in marker, fresh-tyre flag, and elapsed lap offsets) remain NULL rather than being invented. Missing lap times remain NULL. The raw-ingestion stage does not filter out in-laps, out-laps, neutralized laps, or inaccurate laps. Rows are skipped only when they have no usable driver code or positive integer lap number, and those exclusions are counted. Explicit cleaning and attrition reporting belong to the next milestone.
+
+[OpenF1's historical API](https://openf1.org/docs/) provides data from 2023 onward without authentication. The free tier is rate-limited, so this loader waits between requests. FastF1 remains used for schedule ingestion only; do not run an F1TV authentication flow for race laps.
+
+## Ingest Grand Prix pit stops
+
+After race laps are present in PostgreSQL, start with a Bahrain 2023 dry run:
+
+```bash
+python -m backend.ingestion.fetch_pit_stops 2023 --round 1 --dry-run
+```
+
+If it validates the expected pit visits, ingest that round:
+
+```bash
+python -m backend.ingestion.fetch_pit_stops 2023 --round 1
+```
+
+After inspecting the saved records and repeat-run behavior, process all 2023 Race sessions:
+
+```bash
+python -m backend.ingestion.fetch_pit_stops 2023
+```
+
+The loader uses Jolpica's Ergast-compatible `pitstops` and `results` endpoints to get each race's pit-stop records and map source driver IDs to driver codes. Pit stops are matched to the locally stored schedule by season and championship round. The source's stop number is retained when present, and repeat runs upsert by the unique `(session_id, driver_id, stop_number)` key. Missing lap numbers or durations remain NULL and are reported. Jolpica's public historical API is unauthenticated; its pit-stop history starts in 2011. Source details: [Jolpica pit-stop endpoint documentation](https://github.com/jolpica/jolpica-f1/blob/main/docs/endpoints/pitstops.md).
+
+**Duration meaning:** `pit_stops.duration_ms` stores Jolpica's reported pit-stop duration converted to milliseconds. The source duration may include pit entry/exit and, in unusual cases, red-flag delay. It is not the incremental time lost versus continuing at normal racing pace, and it must not be added directly as strategy pit loss. The strategy model will need a separately calibrated pit-loss estimate.
+
+## Ingest Grand Prix weather
+
+The OpenF1 historical weather endpoint provides session weather observations at approximately one-minute intervals. Start with the 2023 Bahrain Grand Prix and inspect the source values before writing to PostgreSQL:
+
+```bash
+# Fetch and validate weather without writing to PostgreSQL
+python -m backend.ingestion.fetch_weather 2023 --round 1 --dry-run
+
+# Upsert the validated Bahrain weather records
+python -m backend.ingestion.fetch_weather 2023 --round 1
+```
+
+After verifying the one-round row counts and repeat-run behavior, preview or ingest the full 2023 season:
+
+```bash
+python -m backend.ingestion.fetch_weather 2023 --dry-run
+python -m backend.ingestion.fetch_weather 2023
+```
+
+The loader matches each stored Grand Prix Race session to OpenF1's `/sessions` and `/meetings` metadata, then reads `/weather?session_key=...`. It writes air temperature, track temperature, relative humidity, rainfall, wind speed, and the observation timestamp. The existing schema uses PostgreSQL `TIMESTAMP` without time zone, so timestamps are converted to UTC and stored as UTC-naive values. Missing sensor values are preserved as NULL; rows with invalid timestamps are excluded and counted because `(session_id, recorded_at)` is the upsert key. An empty weather response is treated as a source-data failure, not a successful empty race.
+
+The weather loader's first implementation and mocked tests are on `feat/race-lap-ingestion`; local tests and a live Bahrain dry-run must pass before database writes. See the [OpenF1 API documentation](https://openf1.org/docs/).
+
+## Ingest Safety Car, VSC, and red-flag periods
+
+The race-control loader reads OpenF1 race-control messages and lap start timestamps, then pairs Safety Car/VSC deployment and ending messages and red-flag/restart messages into inclusive lap intervals in `safety_car_periods`.
+
+Start with a Bahrain dry run:
+
+```bash
+python -m backend.ingestion.fetch_race_control 2023 --round 1 --dry-run
+```
+
+Only after local unit tests pass and OpenF1 access is available, review the period count, timestamp-to-lap mapping counts, unmatched endings, and inferred closures before any write:
+
+```bash
+python -m backend.ingestion.fetch_race_control 2023 --round 1
+```
+
+The mapping policy is explicit. If a race-control record has a valid `lap_number`, that value takes precedence. Otherwise, the event timestamp is assigned to the nearest median `date_start` for each lap across drivers. A timestamp exactly halfway between adjacent median lap starts maps to the earlier lap. OpenF1 documents lap start timestamps as approximate, so fallback mappings are estimates and are counted. Periods still open at the observed race horizon are closed there with `end_inferred=true`; transitions that supersede an active period also use an inferred end. The schema retains source timestamps, mapping method, and the inferred-end flag for auditing.
+
+Red flags are represented separately as `RedFlag` periods, but this is an initial message-pairing approximation, not a complete FIA restart emulator. Validate representative races and document the limitations before using these periods in strategy evaluation. Empty race-control or lap responses are treated as source failures. The public OpenF1 API can temporarily return HTTP 401 for historical data during a live F1 session, in which case live dry-run validation must be deferred until access is restored.
+
+See the [OpenF1 API documentation](https://openf1.org/docs/) for race-control fields.
+
+## Audit stored data coverage
+
+After ingestion, run this database-backed inventory from the repository root:
+
+```bash
+python -m backend.analysis.audit_data_coverage 2023
+```
+
+The audit writes `reports/data_coverage_2023.csv` (one row per scheduled Grand Prix Race session) and `reports/data_coverage_2023.md` (a season summary and per-race table). It reports stored lap, pit-stop, weather, and race-control counts; duplicate identity differences; and nullable-field counts. It does not download data and can run while OpenF1's public API is unavailable.
+
+This is a raw-data inventory, not the clean modelling dataset. It does not yet record exclusions from the ingestion process because those loader counters are not persisted in the database. Treat missing race-control periods as unknown until the race-control loader has successfully run; absence of stored periods does not mean a race had no Safety Car/VSC/red-flag events.
+
+## Build the preliminary clean tyre-pace dataset
+
+After reviewing the coverage inventory, run:
+
+```bash
+python -m backend.analysis.build_clean_dataset 2023
+```
+
+The script reads stored Race-session lap records and writes:
+- `data/processed/modeling_laps_2023.csv` — rows eligible for a preliminary lap-time-versus-tyre-age model.
+- `reports/data_exclusions_2023.csv` — each excluded driver-lap, with one primary reason.
+- `reports/data_attrition_2023.md` — total attrition and per-race exclusion counts.
+- `reports/cleaning_manifest_2023.json` — ruleset version, counts and SHA-256 checksums.
+
+Ruleset version 1.0.0 excludes explicitly deleted/inaccurate laps, known pit-in/out laps, recorded non-clear track-status values, invalid lap times, unsupported or missing compound labels, and missing/invalid/negative tyre ages. Each excluded row is assigned only its first matching reason in the published priority order. A missing stint number alone does not exclude a lap if the required fields are present. The script does not apply arbitrary high-lap-time trimming or impute data.
+
+The first dataset is preliminary, not final research evidence. All track-status fields, pit-in flags, and persisted lap start/end offsets were missing in the current coverage report; accordingly, neutralised laps cannot yet be reliably excluded, pit-in laps can only be excluded when explicitly flagged, and weather is not joined to individual laps. Circuit IDs/names are unresolved for the current schedule. These gaps must be addressed or clearly treated as limitations before final model evaluation. The original PostgreSQL tables remain unchanged.
+
 ## Repository layout
 
 ```text
@@ -98,15 +225,28 @@ FastF1's cache is stored under `backend/cache/`; cache files should not be commi
 │   │   ├── init_db.py
 │   │   ├── check_connection.py
 │   │   └── schema.sql
+│   ├── analysis/
+│   │   ├── audit_data_coverage.py
+│   │   └── build_clean_dataset.py
 │   └── ingestion/
 │       ├── fetch_schedule.py
+│       ├── fetch_race_laps.py
+│       ├── fetch_pit_stops.py
+│       ├── fetch_weather.py
+│       ├── fetch_race_control.py
 │       └── utils.py
 ├── docs/
 │   ├── BUILD_CHECKLIST.md
 │   └── PROJECT_PLAN_V5.md
 ├── tests/
 │   ├── test_database_config.py
-│   └── test_schedule_ingestion.py
+│   ├── test_schedule_ingestion.py
+│   ├── test_race_lap_ingestion.py
+│   ├── test_pit_stop_ingestion.py
+│   ├── test_weather_ingestion.py
+│   ├── test_race_control_ingestion.py
+│   ├── test_data_coverage_audit.py
+│   └── test_clean_dataset.py
 ├── .env.example
 ├── .gitignore
 ├── .python-version
